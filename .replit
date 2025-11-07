@@ -100,3 +100,4 @@ waitForPort = 5000
 
 [agent]
 integrations = ["javascript_supabase:1.0.0"]
+expertMode = true

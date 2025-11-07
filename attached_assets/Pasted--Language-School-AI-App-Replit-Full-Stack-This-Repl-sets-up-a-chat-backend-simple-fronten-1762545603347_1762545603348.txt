@@ -1,0 +1,242 @@
+# 🧩 Language School AI App (Replit Full Stack)
+
+This Repl sets up a **chat backend + simple frontend** for your Language School AI tutors.
+
+It uses the **OpenAI API** with placeholder GPTs per level (A1–C1).  
+Later, you’ll plug in your actual **Assistants** from the [OpenAI Platform](https://platform.openai.com/assistants).
+
+It also saves all chat messages to **Supabase** for tracking progress and teacher review.
+
+---
+
+## ⚙️ 1. Environment Variables
+
+In Replit → “Secrets” → Add these:
+
+```
+OPENAI_API_KEY=your_openai_api_key_here
+SUPABASE_URL=your_supabase_project_url
+SUPABASE_SERVICE_KEY=your_supabase_service_role_key
+```
+
+---
+
+## 📦 2. Install dependencies
+
+In the Replit shell:
+```bash
+npm install express openai dotenv @supabase/supabase-js
+```
+
+---
+
+## 🧠 3. Backend — `index.js`
+
+```js
+import express from "express";
+import OpenAI from "openai";
+import dotenv from "dotenv";
+import { createClient } from "@supabase/supabase-js";
+
+dotenv.config();
+const app = express();
+app.use(express.json());
+
+const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+// Temporary GPT behavior per level (replace later with Assistant IDs)
+const tutorPrompts = {
+  A1: "You are a friendly bilingual English tutor for A1 beginners. Use short English sentences and provide Spanish translations for key words.",
+  A2: "You are an encouraging English tutor for A2 students. Speak mainly in English, correct gently, and explain errors briefly in Spanish.",
+  B1: "You are an English tutor for intermediate learners. Use natural English and explain difficult phrases in Spanish.",
+  B2: "You are an advanced English coach. Focus on fluency, idioms, and pronunciation tips. Speak only in English.",
+  C1: "You are a fluent English teacher for advanced students. Encourage complex conversation and nuanced vocabulary."
+};
+
+// Chat endpoint
+app.post("/chat", async (req, res) => {
+  try {
+    const { level, user_id, messages } = req.body;
+
+    const systemPrompt = tutorPrompts[level] || tutorPrompts.A1;
+
+    const completion = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...messages
+      ]
+    });
+
+    const reply = completion.choices[0].message.content;
+
+    // Save conversation to Supabase
+    await supabase.from("ai_chats").insert({
+      user_id: user_id || null,
+      level,
+      question: messages[messages.length - 1].content,
+      response: reply
+    });
+
+    res.json({ reply });
+  } catch (err) {
+    console.error("Error:", err);
+    res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
+// Simple health check
+app.get("/", (req, res) => {
+  res.send("✅ Language School AI Backend is running!");
+});
+
+app.listen(3000, () => console.log("🚀 Server running on port 3000"));
+```
+
+---
+
+## 🗄️ 4. Supabase table setup
+
+In your Supabase SQL editor, run:
+
+```sql
+create table ai_chats (
+  id bigint generated always as identity primary key,
+  user_id text,
+  level text,
+  question text,
+  response text,
+  created_at timestamp with time zone default now()
+);
+```
+
+---
+
+## 💬 5. Frontend — `public/index.html`
+
+Create a folder `/public` and add this file:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Language School Chat</title>
+  <style>
+    body { font-family: sans-serif; background: #f3f4f6; display: flex; justify-content: center; align-items: center; height: 100vh; }
+    .chat-container { background: white; border-radius: 12px; width: 400px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    #chat { height: 400px; overflow-y: auto; border: 1px solid #ccc; border-radius: 8px; padding: 10px; margin-bottom: 10px; }
+    .msg { margin: 5px 0; }
+    .user { text-align: right; color: blue; }
+    .ai { text-align: left; color: green; }
+    select, input, button { margin: 5px; }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <h2>🧠 AI English Tutor</h2>
+    <label>Level:</label>
+    <select id="level">
+      <option value="A1">A1</option>
+      <option value="A2">A2</option>
+      <option value="B1">B1</option>
+      <option value="B2">B2</option>
+      <option value="C1">C1</option>
+    </select>
+
+    <div id="chat"></div>
+
+    <input type="text" id="message" placeholder="Type your message..." />
+    <button onclick="sendMessage()">Send</button>
+  </div>
+
+  <script>
+    const chatDiv = document.getElementById("chat");
+
+    async function sendMessage() {
+      const level = document.getElementById("level").value;
+      const input = document.getElementById("message");
+      const text = input.value.trim();
+      if (!text) return;
+
+      addMessage("user", text);
+      input.value = "";
+
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          level,
+          messages: [{ role: "user", content: text }]
+        })
+      });
+
+      const data = await res.json();
+      addMessage("ai", data.reply);
+    }
+
+    function addMessage(role, text) {
+      const div = document.createElement("div");
+      div.classList.add("msg", role);
+      div.innerText = text;
+      chatDiv.appendChild(div);
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+  </script>
+</body>
+</html>
+```
+
+---
+
+## 🧱 6. Connect the frontend
+
+In your `index.js`, serve the static frontend by adding this **above** the `app.listen` line:
+
+```js
+app.use(express.static("public"));
+```
+
+Now you can open your Replit web preview — it’ll show the chat interface.
+
+---
+
+## 🧩 7. Later (when GPTs are transferred)
+
+Once your official GPTs are recreated in the **Assistants API**, replace this part:
+
+```js
+const completion = await client.chat.completions.create({...});
+```
+
+with the **Assistants API call**:
+
+```js
+const thread = await client.beta.threads.create();
+await client.beta.threads.messages.create(thread.id, {
+  role: "user",
+  content: messages[messages.length - 1].content
+});
+const run = await client.beta.threads.runs.create(thread.id, {
+  assistant_id: "asst_abc123xyz" // your assistant per level
+});
+```
+
+…and your app will be talking to your custom-trained GPTs — no OpenAI login required for users.
+
+---
+
+## ✅ Summary
+
+| Component | Purpose |
+|------------|----------|
+| **Backend (Express)** | Handles API calls to OpenAI and logs chats |
+| **Supabase** | Stores conversation history for analysis |
+| **Frontend (HTML/JS)** | Lets students talk to their AI tutor |
+| **Assistants API (later)** | Replace placeholder GPT logic with your trained models |
+
+---
+
+Your app is now fully functional and ready for your GPTs to go live.
