@@ -14,6 +14,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeConversation } from "@/hooks/useRealtimeConversation";
+import ConversationTranscript from "@/components/ConversationTranscript";
 import { queryClient } from "@/lib/queryClient";
 
 export default function AIChatActivity() {
@@ -54,8 +55,8 @@ export default function AIChatActivity() {
   const topic = lesson?.topics?.find((t: any) => t.id === params?.topicId);
   const chatActivity = topic?.activities?.find((a: any) => a.type === "chat");
 
-  const { status, errorMessage, startConversation, stopConversation } =
-    useRealtimeConversation(chatActivity?.id || "");
+  const { connectionState, errorMessage, messages, startConversation, stopConversation } =
+    useRealtimeConversation();
 
   const completeActivity = useMutation({
     mutationFn: async (activityId: string) => {
@@ -151,7 +152,7 @@ export default function AIChatActivity() {
   }
 
   const getStatusText = () => {
-    switch (status) {
+    switch (connectionState) {
       case "idle":
         return "Presiona el botón para empezar a practicar";
       case "connecting":
@@ -217,8 +218,13 @@ export default function AIChatActivity() {
                 )}
               </div>
 
+              {/* Live Conversation Transcript */}
+              {(connectionState === "connecting" || connectionState === "active" || connectionState === "ended") && (
+                <ConversationTranscript messages={messages} connectionState={connectionState} />
+              )}
+
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                {status === "idle" && (
+                {connectionState === "idle" && (
                   <Button
                     onClick={startConversation}
                     size="lg"
@@ -230,15 +236,15 @@ export default function AIChatActivity() {
                   </Button>
                 )}
 
-                {(status === "connecting" ||
-                  status === "active" ||
-                  status === "ended") && (
+                {(connectionState === "connecting" ||
+                  connectionState === "active" ||
+                  connectionState === "ended") && (
                   <Button
                     onClick={handleStopAndComplete}
                     size="lg"
                     variant="destructive"
                     className="gap-2"
-                    disabled={status === "connecting"}
+                    disabled={connectionState === "connecting"}
                     data-testid="button-end-conversation"
                   >
                     <Square className="h-5 w-5" />
@@ -246,7 +252,7 @@ export default function AIChatActivity() {
                   </Button>
                 )}
 
-                {status === "error" && (
+                {connectionState === "error" && (
                   <Button
                     onClick={startConversation}
                     size="lg"

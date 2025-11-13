@@ -2,9 +2,17 @@ import { useState, useRef, useEffect } from "react";
 
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
 
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  timestamp: number;
+}
+
 interface UseRealtimeConversationReturn {
   connectionState: ConnectionState;
   errorMessage: string;
+  messages: ConversationMessage[];
   startConversation: () => Promise<void>;
   stopConversation: () => void;
 }
@@ -12,6 +20,7 @@ interface UseRealtimeConversationReturn {
 export function useRealtimeConversation(): UseRealtimeConversationReturn {
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [messages, setMessages] = useState<ConversationMessage[]>([]);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -61,6 +70,9 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
 
     // Only set to "ended" if not already in error state
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
+    
+    // Clear messages on end
+    setMessages([]);
   };
 
   const startConversation = async () => {
@@ -113,6 +125,38 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
         );
       });
 
+      // Listen for conversation events
+      dc.addEventListener("message", (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          // Handle transcript events
+          if (data.type === "conversation.item.input_audio_transcription.completed") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: data.item_id || `user-${Date.now()}`,
+                role: "user",
+                text: data.transcript || "",
+                timestamp: Date.now(),
+              },
+            ]);
+          } else if (data.type === "response.audio_transcript.done") {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: data.response_id || `assistant-${Date.now()}`,
+                role: "assistant",
+                text: data.transcript || "",
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+        } catch (e) {
+          console.error("Error parsing data channel message:", e);
+        }
+      });
+
       // Create and set local offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
@@ -151,6 +195,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   return {
     connectionState,
     errorMessage,
+    messages,
     startConversation,
     stopConversation,
   };
