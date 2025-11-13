@@ -1,7 +1,8 @@
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -108,12 +109,18 @@ export default function TopicDetail() {
   const sortedActivities = topic.activities;
   const firstVideo = sortedActivities.find((a: any) => a.type === "video");
   const hasQuizlet = sortedActivities.some((a: any) => a.type === "quizlet");
+  const hasChat = sortedActivities.some((a: any) => a.type === "chat");
+  const quizletActivities = sortedActivities.filter((a: any) => a.type === "quizlet");
 
   const completedActivityIds = new Set(
     (Array.isArray(completions) ? completions : []).map((c: any) => c.activityId)
   );
 
   const isVideoCompleted = firstVideo && completedActivityIds.has(firstVideo.id);
+  const areQuizletsCompleted = quizletActivities.every((a: any) => completedActivityIds.has(a.id));
+  
+  // Chat is unlocked when video (and flashcards if present) are completed
+  const isChatUnlocked = isVideoCompleted && (!hasQuizlet || areQuizletsCompleted);
 
   const handleActivityComplete = async (activityId: string, navigateAfter?: () => void) => {
     if (!user) {
@@ -219,14 +226,17 @@ export default function TopicDetail() {
                   onInteraction={() => {}}
                   isCompleted={isVideoCompleted}
                   onComplete={() => {
-                    // Determine where to navigate
+                    // Determine where to navigate: Quizlet → Chat → Next Topic
                     let navigateTo: string | null = null;
                     
                     if (hasQuizlet) {
                       // Has flashcards - go to flashcards
                       navigateTo = `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}/flashcards`;
+                    } else if (hasChat) {
+                      // Has chat - go to chat
+                      navigateTo = `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}/chat`;
                     } else {
-                      // No flashcards - find next topic with video or go back to lesson
+                      // No flashcards or chat - find next topic or go back to lesson
                       const currentTopicIndex = lesson.topics.findIndex((t: any) => t.id === params?.topicId);
                       const nextTopic = currentTopicIndex < lesson.topics.length - 1 ? lesson.topics[currentTopicIndex + 1] : null;
                       
@@ -250,6 +260,41 @@ export default function TopicDetail() {
               </div>
             );
           })()}
+
+          {hasChat && (
+            <Card className="mt-6">
+              <CardContent className="pt-6">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-primary/10 p-3 rounded-full">
+                      <MessageSquare className="h-6 w-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Actividad 3: Conversar con IA</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {!isChatUnlocked 
+                          ? "Completa las actividades anteriores para desbloquear" 
+                          : "Practica tu conversación en inglés"}
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() =>
+                      setLocation(
+                        `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}/chat`
+                      )
+                    }
+                    disabled={!isChatUnlocked}
+                    data-testid="button-start-chat"
+                    className="gap-2"
+                  >
+                    <MessageSquare className="h-4 w-4" />
+                    {isChatUnlocked ? "Empezar conversación" : "Bloqueado"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </main>
 

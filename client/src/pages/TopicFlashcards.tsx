@@ -105,6 +105,7 @@ export default function TopicFlashcards() {
   const activityList = topic.activities as any[];
   const completedIds = new Set((Array.isArray(completions) ? completions : []).map((c: any) => c.activityId));
   const quizletActivities = activityList.filter((a) => a.type === "quizlet");
+  const hasChat = activityList.some((a) => a.type === "chat");
 
   // Find next topic for navigation after completing flashcards
   const currentTopicIndex = lesson.topics.findIndex((t: any) => t.id === params?.topicId);
@@ -127,8 +128,12 @@ export default function TopicFlashcards() {
         description: "Actividad marcada como completada",
       });
 
-      // Navigate to next topic after completion is saved
-      if (nextTopic) {
+      // Navigate to chat if available, otherwise next topic
+      if (hasChat) {
+        setLocation(
+          `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}/chat`,
+        );
+      } else if (nextTopic) {
         setLocation(
           `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${nextTopic.id}`,
         );
@@ -148,7 +153,11 @@ export default function TopicFlashcards() {
   };
 
   const handleNavigateNext = () => {
-    if (nextTopic) {
+    if (hasChat) {
+      setLocation(
+        `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}/chat`,
+      );
+    } else if (nextTopic) {
       setLocation(
         `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${nextTopic.id}`,
       );
