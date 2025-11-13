@@ -70,9 +70,6 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
 
     // Only set to "ended" if not already in error state
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
-    
-    // Clear messages on end
-    setMessages([]);
   };
 
   const startConversation = async () => {

@@ -21,10 +21,15 @@ assistantRouter.get("/realtime-token", async (req, res) => {
     });
     
     // Create session with assistant's configuration
+    // Override instructions to default to level 1 and skip lesson level questions
+    const customInstructions = `${assistant.instructions || 'You are a friendly English language tutor helping Spanish speakers practice English conversation.'}
+
+IMPORTANT: Always assume the student is at Level 1 (beginner). Do NOT ask about their lesson level or what level they are at. Start the conversation directly with a simple, friendly greeting and beginner-appropriate topics.`;
+
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17", // Realtime API requires this specific model
       voice: "alloy",
-      instructions: assistant.instructions || `You are a friendly English language tutor helping Spanish speakers practice English conversation.`,
+      instructions: customInstructions,
       modalities: ["text", "audio"],
       turn_detection: {
         type: "server_vad",
