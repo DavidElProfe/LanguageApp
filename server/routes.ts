@@ -7,6 +7,7 @@ import { generateAIReply } from "./lib/ai";
 import * as schema from "@shared/schema";
 import { desc } from "drizzle-orm";
 import { z } from "zod";
+import { assistantRouter } from "./assistantRoutes";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -639,6 +640,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // OpenAI Realtime Assistant routes
+  app.use("/api/assistant", assistantRouter);
 
   const httpServer = createServer(app);
   return httpServer;

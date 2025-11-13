@@ -39,12 +39,15 @@ export const topics = pgTable("topics", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Activity types
+export type ActivityType = "video" | "quizlet" | "chat";
+
 // Activities table
 export const activities = pgTable("activities", {
   id: uuid("id").primaryKey().defaultRandom(),
   topicId: uuid("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
-  type: text("type").notNull(), // "video" | "quizlet" | "aiChat"
-  data: jsonb("data").notNull(), // { videoUrl } | { quizletId } | { promptSet }
+  type: text("type").notNull(), // "video" | "quizlet" | "chat"
+  data: jsonb("data").notNull(), // { videoUrl } | { quizletId } | { assistantId }
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
