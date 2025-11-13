@@ -54,8 +54,8 @@ export default function Home() {
               <FeatureCard
                 icon={Sparkles}
                 title="Chat IA"
-                description={t('comingSoon.chat')}
-                badge={t('pricing.comingSoon')}
+                description="Practica conversaciones con nuestro compañero IA"
+                href="/chat"
               />
             </div>
           </div>
