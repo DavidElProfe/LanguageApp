@@ -1,0 +1,136 @@
+Add a new feature to my existing full-stack app: a Realtime Voice Conversation Partner using my OpenAI Assistant.
+
+Use this assistant ID:
+asst_uoHk8D6G4ZPtYrb6lwueR0uh
+
+My stack:
+
+React + TypeScript frontend in /client
+
+Express.js backend in /server
+
+Router file: server/routes.ts
+
+All UI is in Spanish
+
+I want this to become Activity Type 3: “Chat IA”
+
+Backend Requirements
+
+Create a file at:
+server/assistantRoutes.ts
+This file should:
+
+Import express Router
+
+Import OpenAI package
+
+Create a route: GET /api/assistant/realtime-token
+
+Use OpenAI’s Realtime Tokens API
+
+Return a short-lived session token with:
+
+model: "gpt-4o-realtime-preview"
+
+instructions: "assistant:asst_uoHk8D6G4ZPtYrb6lwueR0uh"
+
+voice: "alloy"
+
+capabilities: ["audio", "text"]
+
+Respond with { token }
+
+Modify server/routes.ts to include:
+
+import { assistantRouter } from "./assistantRoutes";
+app.use("/api/assistant", assistantRouter);
+
+
+Ensure the backend uses process.env.OPENAI_API_KEY and does not expose the key to the browser.
+
+Frontend Requirements
+
+Create a new page component at:
+client/src/pages/AIChatActivity.tsx
+
+The component must:
+
+Use React + TypeScript
+
+Use WebRTC to connect to OpenAI’s Realtime API
+
+Fetch the token from /api/assistant/realtime-token
+
+Stream microphone audio to the assistant
+
+Stream assistant audio back to the user
+
+Provide buttons:
+
+"🎤 Empezar conversación"
+
+"✋ Terminar conversación"
+
+UI language must be fully in Spanish
+
+Title: "Actividad 3: Conversar con IA"
+
+The component must follow this logic:
+
+On start:
+
+call /api/assistant/realtime-token
+
+create RTCPeerConnection()
+
+establish offer/answer flow
+
+attach mic → tracks
+
+On stop:
+
+close the peer connection
+
+stop mic stream
+
+Integrate this into activity routing:
+
+In TopicDetail.tsx, when activity type is "chat", return <AIChatActivity />.
+
+Add "chat" to the ActivityType enum in:
+shared/schema.ts
+Example:
+
+export type ActivityType = "video" | "quizlet" | "chat";
+
+
+Ensure this activity is styled consistent with shadcn/ui and the existing app.
+
+System Behavior Requirements
+
+This becomes Activity 3 after video + flashcards.
+
+Should work seamlessly with your progressive flow.
+
+Should autoplay the assistant greeting automatically when the WebRTC session connects (the assistant’s system instructions already include this).
+
+Must be mobile-friendly.
+
+Completion Criteria
+
+The feature is complete when:
+
+The backend generates ephemeral tokens correctly
+
+The frontend microphone button connects to Realtime and plays AI audio
+
+The activity appears as “Conversar con IA”
+
+Voice conversation with the Assistant works end-to-end
+
+UI is fully in Spanish
+
+No API key is exposed on the client
+
+Fits naturally with your app architecture
