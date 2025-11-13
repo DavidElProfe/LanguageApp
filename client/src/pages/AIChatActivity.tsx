@@ -115,6 +115,7 @@ function useRealtimeConversation(activityId: string) {
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/sdp",
+            "OpenAI-Beta": "realtime=v1",
           },
           body: offer.sdp,
         }
