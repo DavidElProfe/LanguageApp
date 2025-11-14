@@ -30,7 +30,7 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **Direct-to-Video Registration Flow**: New users are directed to the first video lesson immediately after registration.
 - **Smart Resume & Back Navigation**: Intelligent navigation for new and returning users, resuming learning at the precise next activity.
 - **Simplified Progressive Learning Flow**: Streamlined UI with a clear progression (Video → Flashcards → AI Chat → Next Topic Video).
-- **AI Voice Conversation Feature**: Real-time WebRTC voice practice using custom OpenAI Assistant (asst_uoHk8D6G4ZPtYrb6lwueR0uh), including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Defaults to Level 1 (beginner) conversations. Available both as Activity Type 3 (topic-based) and as a standalone conversation partner accessible from the homepage.
+- **AI Voice Conversation Feature**: Real-time WebRTC voice practice using custom OpenAI Assistant (asst_uoHk8D6G4ZPtYrb6lwueR0uh), including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Defaults to Level 1 (beginner) conversations. This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
 - **Authentication-Gated Content**: All course content requires account creation, with unauthenticated users redirected to `/auth`.
 - **Step-by-Step Visual Prompts**: `ActivitySteps` component shows clear progression through each topic with visual indicators.
 - **Progress Bar & Next Topic Navigation**: Real-time progress bar and "Continuar" button to guide users through topics and lessons.

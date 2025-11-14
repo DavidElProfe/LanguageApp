@@ -26,8 +26,13 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/">
+        <ProtectedRoute>
+          <ChatPartner />
+        </ProtectedRoute>
+      </Route>
       <Route path="/auth" component={Auth} />
+      <Route path="/home" component={Home} />
       <Route path="/pricing" component={Pricing} />
       <Route path="/courses">
         <ProtectedRoute>
@@ -57,11 +62,6 @@ function Router() {
       <Route path="/courses/:courseId/lessons/:lessonId/topics/:topicId/chat">
         <ProtectedRoute>
           <AIChatActivity />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/chat">
-        <ProtectedRoute>
-          <ChatPartner />
         </ProtectedRoute>
       </Route>
       <Route path="/topic/:topicId">

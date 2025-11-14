@@ -18,12 +18,12 @@ export default function ChatPartner() {
       <main className="flex-1 container mx-auto px-4 py-8">
         <Button
           variant="ghost"
-          onClick={() => setLocation("/")}
+          onClick={() => setLocation("/home")}
           className="mb-6"
           data-testid="button-back-home"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Volver al inicio
+          Ver cursos
         </Button>
 
         <div className="max-w-2xl mx-auto">

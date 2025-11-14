@@ -55,7 +55,7 @@ export default function Home() {
                 icon={Sparkles}
                 title="Chat IA"
                 description="Practica conversaciones con nuestro compañero IA"
-                href="/chat"
+                href="/"
               />
             </div>
           </div>
