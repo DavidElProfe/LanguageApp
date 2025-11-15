@@ -68,6 +68,14 @@ export const waitlistEmails = pgTable("waitlist_emails", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// AI Sessions table - tracks AI conversation usage
+export const aiSessions = pgTable("ai_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+});
+
 // Insert schemas
 export const insertProfileSchema = createInsertSchema(profiles).omit({
   id: true,
@@ -104,6 +112,11 @@ export const insertWaitlistEmailSchema = createInsertSchema(waitlistEmails).omit
   createdAt: true,
 });
 
+export const insertAiSessionSchema = createInsertSchema(aiSessions).omit({
+  id: true,
+  startedAt: true,
+});
+
 // Types
 export type InsertProfile = z.infer<typeof insertProfileSchema>;
 export type Profile = typeof profiles.$inferSelect;
@@ -125,3 +138,6 @@ export type ActivityCompletion = typeof activityCompletions.$inferSelect;
 
 export type InsertWaitlistEmail = z.infer<typeof insertWaitlistEmailSchema>;
 export type WaitlistEmail = typeof waitlistEmails.$inferSelect;
+
+export type InsertAiSession = z.infer<typeof insertAiSessionSchema>;
+export type AiSession = typeof aiSessions.$inferSelect;

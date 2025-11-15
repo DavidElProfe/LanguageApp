@@ -218,13 +218,73 @@ This app uses a **hybrid architecture**:
 | Service | Purpose | What's Stored |
 |---------|---------|---------------|
 | **Supabase** | Authentication ONLY | Users, sessions, email verification |
-| **Replit PostgreSQL** | Application Data | Courses, lessons, topics, activities, progress |
+| **Replit PostgreSQL** | Application Data | Courses, lessons, topics, activities, progress, **AI sessions** |
 
 **This is by design!** When you view your Supabase dashboard:
 - ✅ You WILL see: Users, authentication logs
-- ❌ You WON'T see: Course content, lessons, user progress
+- ❌ You WON'T see: Course content, lessons, user progress, AI conversation sessions
 
 All application data lives in Replit's PostgreSQL database (accessible via `DATABASE_URL` environment variable).
+
+### 🤖 AI Sessions Table Setup (REQUIRED)
+
+The AI conversation feature tracks usage time in the `ai_sessions` table. **This table must be created manually** in your Replit PostgreSQL database.
+
+**To set up the AI sessions table:**
+
+1. Open the Replit workspace
+2. Go to the **Database** tab
+3. Click **SQL Editor** or **Console**
+4. Run the SQL from `db/setup_ai_sessions.sql`:
+
+```sql
+-- AI Sessions Table - Tracks AI voice conversation usage time
+CREATE TABLE IF NOT EXISTS ai_sessions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  ended_at TIMESTAMP
+);
+
+-- Add indexes for performance
+CREATE INDEX IF NOT EXISTS idx_ai_sessions_user_id_started_at 
+  ON ai_sessions(user_id, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_sessions_ended_at 
+  ON ai_sessions(ended_at) 
+  WHERE ended_at IS NULL;
+```
+
+**To verify the table was created:**
+
+```sql
+SELECT table_name, column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'ai_sessions' 
+ORDER BY ordinal_position;
+```
+
+You should see 4 columns: `id`, `user_id`, `started_at`, `ended_at`
+
+**If session tracking doesn't work:**
+
+Check the browser console for these messages:
+- ⚠️ "Failed to create AI session record" - The table doesn't exist, run the SQL above
+- ⚠️ "Failed to update AI session end time" - Database permission issue
+- ✅ "AI session started: [uuid]" - Session tracking is working correctly
+
+**Usage Analytics:**
+
+View session durations:
+```sql
+SELECT 
+  user_id,
+  COUNT(*) AS total_sessions,
+  AVG(EXTRACT(EPOCH FROM (ended_at - started_at))) AS avg_duration_seconds
+FROM ai_sessions 
+WHERE ended_at IS NOT NULL
+GROUP BY user_id;
+```
 
 ## 🆘 Still Having Issues?
 

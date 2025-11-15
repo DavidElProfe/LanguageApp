@@ -14,7 +14,7 @@ interface UseRealtimeConversationReturn {
   errorMessage: string;
   messages: ConversationMessage[];
   startConversation: () => Promise<void>;
-  stopConversation: () => void;
+  stopConversation: () => Promise<void>;
 }
 
 export function useRealtimeConversation(): UseRealtimeConversationReturn {
@@ -26,15 +26,40 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopConversation();
+      // Can't use async in cleanup, so fire and forget
+      stopConversation().catch(console.error);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const stopConversation = () => {
+  const stopConversation = async () => {
+    // End the AI session in the database
+    if (sessionIdRef.current) {
+      if (globalThis.__supabaseInitPromise) {
+        await globalThis.__supabaseInitPromise;
+      }
+      const supabase = globalThis.__supabaseClient;
+      
+      if (supabase) {
+        const { error } = await supabase
+          .from("ai_sessions")
+          .update({ ended_at: new Date().toISOString() })
+          .eq("id", sessionIdRef.current);
+        
+        if (error) {
+          console.error("⚠️ Failed to update AI session end time:", error.message);
+        } else {
+          console.log("✅ AI session ended:", sessionIdRef.current);
+        }
+        sessionIdRef.current = null;
+      }
+    }
+
     // Stop media stream tracks first (critical for privacy)
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((track) => {
@@ -76,6 +101,34 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
     try {
       setConnectionState("connecting");
       setErrorMessage("");
+
+      // Start a new AI session in the database
+      if (globalThis.__supabaseInitPromise) {
+        await globalThis.__supabaseInitPromise;
+      }
+      const supabase = globalThis.__supabaseClient;
+      
+      if (supabase) {
+        const { data: userData, error: userError } = await supabase.auth.getUser();
+        
+        if (userError) {
+          console.warn("Could not get user for session tracking:", userError);
+        } else if (userData?.user) {
+          const { data, error } = await supabase
+            .from("ai_sessions")
+            .insert({ user_id: userData.user.id })
+            .select()
+            .single();
+
+          if (error) {
+            console.error("⚠️ Failed to create AI session record:", error.message);
+            console.error("Session usage time will not be tracked for this conversation.");
+          } else if (data) {
+            sessionIdRef.current = data.id;
+            console.log("✅ AI session started:", data.id);
+          }
+        }
+      }
 
       // Get ephemeral token from backend
       const tokenRes = await fetch("/api/assistant/realtime-token");
