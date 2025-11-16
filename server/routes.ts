@@ -357,6 +357,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI Session routes
+  app.post("/api/ai-sessions/start", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const session = await storage.startAiSession(req.user!.id);
+      res.json(session);
+    } catch (error: any) {
+      console.error('Start AI session error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ai-sessions/end/:sessionId", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const session = await storage.endAiSession(req.params.sessionId);
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      res.json(session);
+    } catch (error: any) {
+      console.error('End AI session error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Dashboard stats (updated for new model)
   app.get("/api/dashboard/stats", authenticateUser, async (req: AuthRequest, res) => {
     try {

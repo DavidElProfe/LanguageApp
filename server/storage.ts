@@ -11,6 +11,8 @@ import type {
   Activity,
   ActivityCompletion,
   InsertWaitlistEmail,
+  AiSession,
+  InsertAiSession,
 } from "@shared/schema";
 import {
   Course as CourseModel,
@@ -53,6 +55,10 @@ export interface IStorage {
 
   // Waitlist operations
   addToWaitlist(email: string): Promise<void>;
+
+  // AI Session operations
+  startAiSession(userId: string): Promise<AiSession>;
+  endAiSession(sessionId: string): Promise<AiSession | undefined>;
 }
 
 class DbStorage implements IStorage {
@@ -240,6 +246,24 @@ class DbStorage implements IStorage {
       .values({ email })
       .onConflictDoNothing();
   }
+
+  // AI Session operations
+  async startAiSession(userId: string): Promise<AiSession> {
+    const result = await this.db
+      .insert(schema.aiSessions)
+      .values({ userId: userId as any })
+      .returning();
+    return result[0];
+  }
+
+  async endAiSession(sessionId: string): Promise<AiSession | undefined> {
+    const result = await this.db
+      .update(schema.aiSessions)
+      .set({ endedAt: new Date() })
+      .where(eq(schema.aiSessions.id, sessionId))
+      .returning();
+    return result[0];
+  }
 }
 
 class DevStorage implements IStorage {
@@ -326,6 +350,26 @@ class DevStorage implements IStorage {
   async addToWaitlist(_email: string): Promise<void> {
     // No-op in memory
     return;
+  }
+
+  async startAiSession(_userId: string): Promise<AiSession> {
+    // Return mock session in dev mode
+    return {
+      id: crypto.randomUUID(),
+      userId: _userId as any,
+      startedAt: new Date(),
+      endedAt: null,
+    } as any;
+  }
+
+  async endAiSession(_sessionId: string): Promise<AiSession | undefined> {
+    // Return mock ended session in dev mode
+    return {
+      id: _sessionId,
+      userId: crypto.randomUUID() as any,
+      startedAt: new Date(),
+      endedAt: new Date(),
+    } as any;
   }
 }
 
