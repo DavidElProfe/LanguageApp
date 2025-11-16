@@ -28,6 +28,15 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
+  // Initialize Supabase on mount to ensure auth is available
+  useEffect(() => {
+    import('@/lib/supabase').then(({ getSupabase }) => {
+      getSupabase().catch((error) => {
+        console.error("Failed to initialize Supabase:", error);
+      });
+    });
+  }, []);
+
   // Helper function to save message to backend (non-blocking)
   const saveMessageToBackend = async (role: "user" | "assistant", content: string) => {
     if (!sessionIdRef.current || !content.trim()) return;
