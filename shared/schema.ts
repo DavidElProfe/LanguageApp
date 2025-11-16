@@ -76,6 +76,15 @@ export const aiSessions = pgTable("ai_sessions", {
   endedAt: timestamp("ended_at"),
 });
 
+// AI Session Messages table - stores conversation transcript
+export const aiSessionMessages = pgTable("ai_session_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id").notNull().references(() => aiSessions.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // "user" | "assistant"
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Insert schemas
 export const insertProfileSchema = createInsertSchema(profiles).omit({
   id: true,
@@ -117,6 +126,11 @@ export const insertAiSessionSchema = createInsertSchema(aiSessions).omit({
   startedAt: true,
 });
 
+export const insertAiSessionMessageSchema = createInsertSchema(aiSessionMessages).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type InsertProfile = z.infer<typeof insertProfileSchema>;
 export type Profile = typeof profiles.$inferSelect;
@@ -141,3 +155,6 @@ export type WaitlistEmail = typeof waitlistEmails.$inferSelect;
 
 export type InsertAiSession = z.infer<typeof insertAiSessionSchema>;
 export type AiSession = typeof aiSessions.$inferSelect;
+
+export type InsertAiSessionMessage = z.infer<typeof insertAiSessionMessageSchema>;
+export type AiSessionMessage = typeof aiSessionMessages.$inferSelect;

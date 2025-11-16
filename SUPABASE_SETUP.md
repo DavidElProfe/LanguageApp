@@ -286,6 +286,72 @@ WHERE ended_at IS NOT NULL
 GROUP BY user_id;
 ```
 
+### 💬 AI Session Messages Table Setup (REQUIRED for conversation recording)
+
+The AI conversation feature also records the full transcript of conversations for review and analytics.
+
+**To set up the messages table:**
+
+Run this SQL in the Replit Database Console:
+
+```sql
+-- AI Session Messages Table - Stores conversation transcripts
+CREATE TABLE IF NOT EXISTS ai_session_messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Add index for efficient message retrieval
+CREATE INDEX IF NOT EXISTS idx_ai_session_messages_session_id 
+  ON ai_session_messages(session_id, created_at DESC);
+```
+
+**To verify the table was created:**
+
+```sql
+SELECT table_name, column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'ai_session_messages' 
+ORDER BY ordinal_position;
+```
+
+You should see 5 columns: `id`, `session_id`, `role`, `content`, `created_at`
+
+**View conversation transcripts:**
+
+```sql
+SELECT 
+  m.created_at,
+  m.role,
+  m.content,
+  p.display_name
+FROM ai_session_messages m
+JOIN ai_sessions s ON m.session_id = s.id
+JOIN profiles p ON s.user_id = p.id
+WHERE m.session_id = 'SESSION_ID_HERE'
+ORDER BY m.created_at ASC;
+```
+
+**View all conversations for a user:**
+
+```sql
+SELECT 
+  s.id as session_id,
+  s.started_at,
+  s.ended_at,
+  COUNT(m.id) as message_count,
+  STRING_AGG(m.role || ': ' || SUBSTRING(m.content, 1, 50), ' | ' ORDER BY m.created_at) as preview
+FROM ai_sessions s
+LEFT JOIN ai_session_messages m ON m.session_id = s.id
+JOIN profiles p ON s.user_id = p.id
+WHERE s.user_id = 'USER_ID_HERE'
+GROUP BY s.id, s.started_at, s.ended_at
+ORDER BY s.started_at DESC;
+```
+
 ## 🆘 Still Having Issues?
 
 If you're still experiencing problems:

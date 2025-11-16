@@ -2,7 +2,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, db } from "./storage";
 import { supabaseAdmin, getSupabaseClient } from "./lib/supabase";
-import { insertWaitlistEmailSchema } from "@shared/schema";
+import { insertWaitlistEmailSchema, insertAiSessionMessageSchema } from "@shared/schema";
 import { generateAIReply } from "./lib/ai";
 import * as schema from "@shared/schema";
 import { desc } from "drizzle-orm";
@@ -378,6 +378,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('End AI session error:', error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/ai-sessions/:sessionId/messages", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { sessionId } = req.params;
+      const validated = insertAiSessionMessageSchema.parse(req.body);
+      
+      const message = await storage.saveMessage(
+        sessionId,
+        validated.role,
+        validated.content
+      );
+      
+      res.json(message);
+    } catch (error: any) {
+      console.error('Save message error:', error);
+      res.status(400).json({ error: error.message });
     }
   });
 

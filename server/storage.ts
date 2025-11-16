@@ -13,6 +13,7 @@ import type {
   InsertWaitlistEmail,
   AiSession,
   InsertAiSession,
+  AiSessionMessage,
 } from "@shared/schema";
 import {
   Course as CourseModel,
@@ -59,6 +60,7 @@ export interface IStorage {
   // AI Session operations
   startAiSession(userId: string): Promise<AiSession>;
   endAiSession(sessionId: string): Promise<AiSession | undefined>;
+  saveMessage(sessionId: string, role: string, content: string): Promise<AiSessionMessage>;
 }
 
 class DbStorage implements IStorage {
@@ -264,6 +266,14 @@ class DbStorage implements IStorage {
       .returning();
     return result[0];
   }
+
+  async saveMessage(sessionId: string, role: string, content: string): Promise<AiSessionMessage> {
+    const result = await this.db
+      .insert(schema.aiSessionMessages)
+      .values({ sessionId: sessionId as any, role, content })
+      .returning();
+    return result[0];
+  }
 }
 
 class DevStorage implements IStorage {
@@ -369,6 +379,17 @@ class DevStorage implements IStorage {
       userId: crypto.randomUUID() as any,
       startedAt: new Date(),
       endedAt: new Date(),
+    } as any;
+  }
+
+  async saveMessage(sessionId: string, role: string, content: string): Promise<AiSessionMessage> {
+    // Return mock message in dev mode
+    return {
+      id: crypto.randomUUID(),
+      sessionId: sessionId as any,
+      role,
+      content,
+      createdAt: new Date(),
     } as any;
   }
 }

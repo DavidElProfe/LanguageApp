@@ -28,6 +28,35 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
+  // Helper function to save message to backend (non-blocking)
+  const saveMessageToBackend = async (role: "user" | "assistant", content: string) => {
+    if (!sessionIdRef.current || !content.trim()) return;
+    
+    try {
+      if (globalThis.__supabaseInitPromise) {
+        await globalThis.__supabaseInitPromise;
+      }
+      const supabase = globalThis.__supabaseClient;
+      
+      if (!supabase) return;
+
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) return;
+
+      await fetch(`/api/ai-sessions/${sessionIdRef.current}/messages`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ role, content }),
+      });
+    } catch (error) {
+      console.error("⚠️ Error saving message:", error);
+    }
+  };
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -214,25 +243,31 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
           
           // Handle transcript events
           if (data.type === "conversation.item.input_audio_transcription.completed") {
+            const userMessage = data.transcript || "";
             setMessages((prev) => [
               ...prev,
               {
                 id: data.item_id || `user-${Date.now()}`,
                 role: "user",
-                text: data.transcript || "",
+                text: userMessage,
                 timestamp: Date.now(),
               },
             ]);
+            // Save to backend
+            saveMessageToBackend("user", userMessage);
           } else if (data.type === "response.audio_transcript.done") {
+            const assistantMessage = data.transcript || "";
             setMessages((prev) => [
               ...prev,
               {
                 id: data.response_id || `assistant-${Date.now()}`,
                 role: "assistant",
-                text: data.transcript || "",
+                text: assistantMessage,
                 timestamp: Date.now(),
               },
             ]);
+            // Save to backend
+            saveMessageToBackend("assistant", assistantMessage);
           }
         } catch (e) {
           console.error("Error parsing data channel message:", e);
