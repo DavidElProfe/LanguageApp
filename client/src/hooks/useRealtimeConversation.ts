@@ -40,22 +40,35 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   const stopConversation = async () => {
     // End the AI session in the database
     if (sessionIdRef.current) {
-      if (globalThis.__supabaseInitPromise) {
-        await globalThis.__supabaseInitPromise;
-      }
-      const supabase = globalThis.__supabaseClient;
-      
-      if (supabase) {
-        const { error } = await supabase
-          .from("ai_sessions")
-          .update({ ended_at: new Date().toISOString() })
-          .eq("id", sessionIdRef.current);
-        
-        if (error) {
-          console.error("⚠️ Failed to update AI session end time:", error.message);
-        } else {
-          console.log("✅ AI session ended:", sessionIdRef.current);
+      try {
+        // Get auth token from Supabase
+        if (globalThis.__supabaseInitPromise) {
+          await globalThis.__supabaseInitPromise;
         }
+        const supabase = globalThis.__supabaseClient;
+        
+        if (supabase) {
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          if (session?.access_token) {
+            const response = await fetch(`/api/ai-sessions/end/${sessionIdRef.current}`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            });
+
+            if (!response.ok) {
+              console.error("⚠️ Failed to update AI session end time");
+            } else {
+              console.log("✅ AI session ended:", sessionIdRef.current);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("⚠️ Error ending AI session:", error);
+      } finally {
         sessionIdRef.current = null;
       }
     }
@@ -103,31 +116,37 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
       setErrorMessage("");
 
       // Start a new AI session in the database
-      if (globalThis.__supabaseInitPromise) {
-        await globalThis.__supabaseInitPromise;
-      }
-      const supabase = globalThis.__supabaseClient;
-      
-      if (supabase) {
-        const { data: userData, error: userError } = await supabase.auth.getUser();
+      try {
+        if (globalThis.__supabaseInitPromise) {
+          await globalThis.__supabaseInitPromise;
+        }
+        const supabase = globalThis.__supabaseClient;
         
-        if (userError) {
-          console.warn("Could not get user for session tracking:", userError);
-        } else if (userData?.user) {
-          const { data, error } = await supabase
-            .from("ai_sessions")
-            .insert({ user_id: userData.user.id })
-            .select()
-            .single();
+        if (supabase) {
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          if (session?.access_token) {
+            const response = await fetch('/api/ai-sessions/start', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            });
 
-          if (error) {
-            console.error("⚠️ Failed to create AI session record:", error.message);
-            console.error("Session usage time will not be tracked for this conversation.");
-          } else if (data) {
-            sessionIdRef.current = data.id;
-            console.log("✅ AI session started:", data.id);
+            if (!response.ok) {
+              console.error("⚠️ Failed to create AI session record");
+              console.error("Session usage time will not be tracked for this conversation.");
+            } else {
+              const data = await response.json();
+              sessionIdRef.current = data.id;
+              console.log("✅ AI session started:", data.id);
+            }
           }
         }
+      } catch (error) {
+        console.error("⚠️ Error starting AI session:", error);
+        console.error("Session usage time will not be tracked for this conversation.");
       }
 
       // Get ephemeral token from backend
