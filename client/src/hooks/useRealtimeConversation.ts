@@ -38,39 +38,42 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   }, []);
 
   const stopConversation = async () => {
-    // End the AI session in the database
+    // End the AI session in the database (fire and forget)
     if (sessionIdRef.current) {
-      try {
-        // Get auth token from Supabase
-        if (globalThis.__supabaseInitPromise) {
-          await globalThis.__supabaseInitPromise;
-        }
-        const supabase = globalThis.__supabaseClient;
-        
-        if (supabase) {
+      const endSession = async () => {
+        try {
+          if (globalThis.__supabaseInitPromise) {
+            await globalThis.__supabaseInitPromise;
+          }
+          const supabase = globalThis.__supabaseClient;
+          
+          if (!supabase) return;
+
           const { data: { session } } = await supabase.auth.getSession();
           
-          if (session?.access_token) {
-            const response = await fetch(`/api/ai-sessions/end/${sessionIdRef.current}`, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                'Content-Type': 'application/json',
-              },
-            });
+          if (!session?.access_token) return;
 
-            if (!response.ok) {
-              console.error("⚠️ Failed to update AI session end time");
-            } else {
-              console.log("✅ AI session ended:", sessionIdRef.current);
-            }
+          const response = await fetch(`/api/ai-sessions/end/${sessionIdRef.current}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) {
+            console.error("⚠️ Failed to update AI session end time");
+          } else {
+            console.log("✅ AI session ended:", sessionIdRef.current);
           }
+        } catch (error) {
+          console.error("⚠️ Error ending AI session:", error);
         }
-      } catch (error) {
-        console.error("⚠️ Error ending AI session:", error);
-      } finally {
-        sessionIdRef.current = null;
-      }
+      };
+      
+      // Fire and forget - don't block cleanup
+      endSession();
+      sessionIdRef.current = null;
     }
 
     // Stop media stream tracks first (critical for privacy)
@@ -115,39 +118,49 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
       setConnectionState("connecting");
       setErrorMessage("");
 
-      // Start a new AI session in the database
-      try {
-        if (globalThis.__supabaseInitPromise) {
-          await globalThis.__supabaseInitPromise;
-        }
-        const supabase = globalThis.__supabaseClient;
-        
-        if (supabase) {
+      // Start a new AI session in the database (non-blocking, for analytics)
+      const trackSession = async () => {
+        try {
+          // Ensure Supabase is initialized
+          if (globalThis.__supabaseInitPromise) {
+            await globalThis.__supabaseInitPromise;
+          }
+          const supabase = globalThis.__supabaseClient;
+          
+          if (!supabase) {
+            console.warn("⚠️ Supabase not initialized, session tracking disabled");
+            return;
+          }
+
           const { data: { session } } = await supabase.auth.getSession();
           
-          if (session?.access_token) {
-            const response = await fetch('/api/ai-sessions/start', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                'Content-Type': 'application/json',
-              },
-            });
-
-            if (!response.ok) {
-              console.error("⚠️ Failed to create AI session record");
-              console.error("Session usage time will not be tracked for this conversation.");
-            } else {
-              const data = await response.json();
-              sessionIdRef.current = data.id;
-              console.log("✅ AI session started:", data.id);
-            }
+          if (!session?.access_token) {
+            console.warn("⚠️ No auth session, session tracking disabled");
+            return;
           }
+
+          const response = await fetch('/api/ai-sessions/start', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (!response.ok) {
+            console.error("⚠️ Failed to create AI session record");
+          } else {
+            const data = await response.json();
+            sessionIdRef.current = data.id;
+            console.log("✅ AI session started:", data.id);
+          }
+        } catch (error) {
+          console.error("⚠️ Error starting AI session:", error);
         }
-      } catch (error) {
-        console.error("⚠️ Error starting AI session:", error);
-        console.error("Session usage time will not be tracked for this conversation.");
-      }
+      };
+      
+      // Track session asynchronously (don't block conversation start)
+      trackSession();
 
       // Get ephemeral token from backend
       const tokenRes = await fetch("/api/assistant/realtime-token");
