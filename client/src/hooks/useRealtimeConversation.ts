@@ -156,49 +156,42 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
       setConnectionState("connecting");
       setErrorMessage("");
 
-      // Start a new AI session in the database (non-blocking, for analytics)
-      const trackSession = async () => {
-        try {
-          // Ensure Supabase is initialized
-          if (globalThis.__supabaseInitPromise) {
-            await globalThis.__supabaseInitPromise;
-          }
-          const supabase = globalThis.__supabaseClient;
-          
-          if (!supabase) {
-            console.warn("⚠️ Supabase not initialized, session tracking disabled");
-            return;
-          }
-
+      // Start a new AI session in the database - MUST complete before messages arrive
+      try {
+        // Ensure Supabase is initialized
+        if (globalThis.__supabaseInitPromise) {
+          await globalThis.__supabaseInitPromise;
+        }
+        const supabase = globalThis.__supabaseClient;
+        
+        if (supabase) {
           const { data: { session } } = await supabase.auth.getSession();
           
-          if (!session?.access_token) {
-            console.warn("⚠️ No auth session, session tracking disabled");
-            return;
-          }
+          if (session?.access_token) {
+            const response = await fetch('/api/ai-sessions/start', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            });
 
-          const response = await fetch('/api/ai-sessions/start', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-
-          if (!response.ok) {
-            console.error("⚠️ Failed to create AI session record");
+            if (!response.ok) {
+              console.error("⚠️ Failed to create AI session record - conversation won't be tracked");
+            } else {
+              const data = await response.json();
+              sessionIdRef.current = data.id;
+              console.log("✅ AI session started:", data.id);
+            }
           } else {
-            const data = await response.json();
-            sessionIdRef.current = data.id;
-            console.log("✅ AI session started:", data.id);
+            console.warn("⚠️ No auth session - conversation won't be tracked");
           }
-        } catch (error) {
-          console.error("⚠️ Error starting AI session:", error);
+        } else {
+          console.warn("⚠️ Supabase not initialized - conversation won't be tracked");
         }
-      };
-      
-      // Track session asynchronously (don't block conversation start)
-      trackSession();
+      } catch (error) {
+        console.error("⚠️ Error starting AI session - conversation won't be tracked:", error);
+      }
 
       // Get ephemeral token from backend
       const tokenRes = await fetch("/api/assistant/realtime-token");
