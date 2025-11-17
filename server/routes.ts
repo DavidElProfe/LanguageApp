@@ -397,7 +397,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/ai-sessions/:sessionId/messages", authenticateUser, async (req: AuthRequest, res) => {
     try {
       const { sessionId } = req.params;
-      const validated = insertAiSessionMessageSchema.parse(req.body);
+      // Only validate role and content from body (sessionId is in URL)
+      const validated = insertAiSessionMessageSchema.omit({ sessionId: true }).parse(req.body);
       
       const message = await storage.saveMessage(
         sessionId,
