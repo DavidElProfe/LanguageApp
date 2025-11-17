@@ -76,8 +76,11 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   }, []);
 
   const stopConversation = async () => {
+    // Capture the session ID BEFORE clearing the ref
+    const sessionId = sessionIdRef.current;
+    
     // End the AI session in the database (fire and forget)
-    if (sessionIdRef.current) {
+    if (sessionId) {
       const endSession = async () => {
         try {
           if (globalThis.__supabaseInitPromise) {
@@ -91,7 +94,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
           
           if (!session?.access_token) return;
 
-          const response = await fetch(`/api/ai-sessions/end/${sessionIdRef.current}`, {
+          const response = await fetch(`/api/ai-sessions/end/${sessionId}`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -102,7 +105,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
           if (!response.ok) {
             console.error("⚠️ Failed to update AI session end time");
           } else {
-            console.log("✅ AI session ended:", sessionIdRef.current);
+            console.log("✅ AI session ended:", sessionId);
           }
         } catch (error) {
           console.error("⚠️ Error ending AI session:", error);

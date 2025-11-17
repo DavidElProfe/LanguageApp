@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Dialog,
   DialogContent,
@@ -32,8 +32,14 @@ export default function Auth() {
   const [isPasswordReset, setIsPasswordReset] = useState(false);
   const [newPasswordData, setNewPasswordData] = useState({ password: '', confirmPassword: '' });
 
-  const [signInData, setSignInData] = useState({ email: '', password: '' });
-  const [signUpData, setSignUpData] = useState({ email: '', password: '', confirmPassword: '' });
+  // Unified auth mode: "signin" or "signup"
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signup');
+  const [authData, setAuthData] = useState({ 
+    name: '', 
+    email: '', 
+    password: '', 
+    confirmPassword: '' 
+  });
 
   // Check for password recovery on mount and when hash/session changes
   useEffect(() => {
@@ -112,50 +118,56 @@ export default function Auth() {
     };
   }, [session]);
 
-  const handleSignIn = async (e: React.FormEvent) => {
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
-    try {
-      await signIn(signInData.email, signInData.password);
-      toast({ title: t('auth.welcomeBack'), description: t('auth.signedInSuccessfully') });
-      // Small delay to ensure state updates before navigation
-      setTimeout(() => setLocation('/dashboard'), 100);
-    } catch (error: any) {
-      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
-      setIsLoading(false);
-    }
-  };
-
-  const handleSignUp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (signUpData.password !== signUpData.confirmPassword) {
-      toast({ title: t('common.error'), description: t('auth.passwordsDoNotMatch'), variant: 'destructive' });
-      return;
-    }
-    setIsLoading(true);
-    try {
-      await signUp(signUpData.email, signUpData.password);
-      toast({ title: t('auth.success'), description: t('auth.accountCreatedSuccessfully') });
-      
-      // Fetch the first video lesson path for new users
-      try {
-        const response = await fetch('/api/dashboard/next-topic');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.navigationPath) {
-            setTimeout(() => setLocation(data.navigationPath), 100);
-            return;
-          }
-        }
-      } catch (navError) {
-        console.error('Failed to get first lesson path:', navError);
+    
+    if (authMode === 'signup') {
+      // Validate signup
+      if (!authData.name.trim()) {
+        toast({ title: t('common.error'), description: 'Por favor ingresa tu nombre', variant: 'destructive' });
+        return;
+      }
+      if (authData.password !== authData.confirmPassword) {
+        toast({ title: t('common.error'), description: t('auth.passwordsDoNotMatch'), variant: 'destructive' });
+        return;
       }
       
-      // Fallback to dashboard if navigation path fetch fails
-      setTimeout(() => setLocation('/dashboard'), 100);
-    } catch (error: any) {
-      toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
-      setIsLoading(false);
+      setIsLoading(true);
+      try {
+        await signUp(authData.email, authData.password, authData.name);
+        toast({ title: t('auth.success'), description: t('auth.accountCreatedSuccessfully') });
+        
+        // Fetch the first video lesson path for new users
+        try {
+          const response = await fetch('/api/dashboard/next-topic');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.navigationPath) {
+              setTimeout(() => setLocation(data.navigationPath), 100);
+              return;
+            }
+          }
+        } catch (navError) {
+          console.error('Failed to get first lesson path:', navError);
+        }
+        
+        // Fallback to dashboard if navigation path fetch fails
+        setTimeout(() => setLocation('/dashboard'), 100);
+      } catch (error: any) {
+        toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+        setIsLoading(false);
+      }
+    } else {
+      // Sign in
+      setIsLoading(true);
+      try {
+        await signIn(authData.email, authData.password);
+        toast({ title: t('auth.welcomeBack'), description: t('auth.signedInSuccessfully') });
+        setTimeout(() => setLocation('/dashboard'), 100);
+      } catch (error: any) {
+        toast({ title: t('common.error'), description: error.message, variant: 'destructive' });
+        setIsLoading(false);
+      }
     }
   };
 
@@ -281,131 +293,146 @@ export default function Auth() {
           <h1 className="text-2xl font-bold">La Escuela de Idiomas</h1>
         </div>
 
-        <Tabs defaultValue="signin">
-          <TabsList className="grid w-full grid-cols-2 mb-6">
-            <TabsTrigger value="signin" data-testid="tab-signin">{t('auth.signin')}</TabsTrigger>
-            <TabsTrigger value="signup" data-testid="tab-signup">{t('auth.signup')}</TabsTrigger>
-          </TabsList>
+        <form onSubmit={handleAuth} className="space-y-6">
+          {/* Auth Mode Selector */}
+          <RadioGroup 
+            value={authMode} 
+            onValueChange={(value) => setAuthMode(value as 'signin' | 'signup')}
+            className="flex gap-4 justify-center"
+          >
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="signup" id="signup" data-testid="radio-signup" />
+              <Label htmlFor="signup" className="cursor-pointer font-normal">
+                Crear cuenta
+              </Label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <RadioGroupItem value="signin" id="signin" data-testid="radio-signin" />
+              <Label htmlFor="signin" className="cursor-pointer font-normal">
+                Ya tengo cuenta
+              </Label>
+            </div>
+          </RadioGroup>
 
-          <TabsContent value="signin">
-            <form onSubmit={handleSignIn} className="space-y-4">
-              <div>
-                <Label htmlFor="signin-email">{t('auth.email')}</Label>
-                <Input
-                  id="signin-email"
-                  type="email"
-                  value={signInData.email}
-                  onChange={(e) => setSignInData({ ...signInData, email: e.target.value })}
-                  required
-                  data-testid="input-signin-email"
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="signin-password">{t('auth.password')}</Label>
-                <Input
-                  id="signin-password"
-                  type="password"
-                  value={signInData.password}
-                  onChange={(e) => setSignInData({ ...signInData, password: e.target.value })}
-                  required
-                  data-testid="input-signin-password"
-                  className="mt-2"
-                />
-              </div>
-              <div className="flex justify-end">
-                <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
-                  <DialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="text-sm text-muted-foreground hover:text-primary p-0 h-auto"
-                      data-testid="button-forgot-password"
-                    >
-                      {t('auth.forgotPassword')}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent data-testid="dialog-reset-password">
-                    <DialogHeader>
-                      <DialogTitle>{t('auth.resetPassword')}</DialogTitle>
-                      <DialogDescription>
-                        {t('auth.enterEmailToReset')}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleResetPassword}>
-                      <div className="space-y-4 py-4">
-                        <div>
-                          <Label htmlFor="reset-email">{t('auth.email')}</Label>
-                          <Input
-                            id="reset-email"
-                            type="email"
-                            value={resetEmail}
-                            onChange={(e) => setResetEmail(e.target.value)}
-                            required
-                            data-testid="input-reset-email"
-                            className="mt-2"
-                          />
-                        </div>
+          {/* Name field - only show for signup */}
+          {authMode === 'signup' && (
+            <div>
+              <Label htmlFor="name">Nombre</Label>
+              <Input
+                id="name"
+                type="text"
+                value={authData.name}
+                onChange={(e) => setAuthData({ ...authData, name: e.target.value })}
+                required
+                data-testid="input-name"
+                className="mt-2"
+                placeholder="Tu nombre completo"
+              />
+            </div>
+          )}
+
+          {/* Email field */}
+          <div>
+            <Label htmlFor="email">{t('auth.email')}</Label>
+            <Input
+              id="email"
+              type="email"
+              value={authData.email}
+              onChange={(e) => setAuthData({ ...authData, email: e.target.value })}
+              required
+              data-testid="input-email"
+              className="mt-2"
+              placeholder="tu@email.com"
+            />
+          </div>
+
+          {/* Password field */}
+          <div>
+            <Label htmlFor="password">{t('auth.password')}</Label>
+            <Input
+              id="password"
+              type="password"
+              value={authData.password}
+              onChange={(e) => setAuthData({ ...authData, password: e.target.value })}
+              required
+              data-testid="input-password"
+              className="mt-2"
+              placeholder={authMode === 'signup' ? 'Mínimo 6 caracteres' : ''}
+            />
+          </div>
+
+          {/* Confirm Password field - only show for signup */}
+          {authMode === 'signup' && (
+            <div>
+              <Label htmlFor="confirm-password">{t('auth.confirmPassword')}</Label>
+              <Input
+                id="confirm-password"
+                type="password"
+                value={authData.confirmPassword}
+                onChange={(e) => setAuthData({ ...authData, confirmPassword: e.target.value })}
+                required
+                data-testid="input-confirm-password"
+                className="mt-2"
+                placeholder="Confirma tu contraseña"
+              />
+            </div>
+          )}
+
+          {/* Forgot password link - only show for signin */}
+          {authMode === 'signin' && (
+            <div className="flex justify-end">
+              <Dialog open={showForgotPassword} onOpenChange={setShowForgotPassword}>
+                <DialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="text-sm text-muted-foreground hover:text-primary p-0 h-auto"
+                    data-testid="button-forgot-password"
+                  >
+                    {t('auth.forgotPassword')}
+                  </Button>
+                </DialogTrigger>
+                <DialogContent data-testid="dialog-reset-password">
+                  <DialogHeader>
+                    <DialogTitle>{t('auth.resetPassword')}</DialogTitle>
+                    <DialogDescription>
+                      {t('auth.enterEmailToReset')}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleResetPassword}>
+                    <div className="space-y-4 py-4">
+                      <div>
+                        <Label htmlFor="reset-email">{t('auth.email')}</Label>
+                        <Input
+                          id="reset-email"
+                          type="email"
+                          value={resetEmail}
+                          onChange={(e) => setResetEmail(e.target.value)}
+                          required
+                          data-testid="input-reset-email"
+                          className="mt-2"
+                        />
                       </div>
-                      <DialogFooter>
-                        <Button type="submit" disabled={isResetLoading} data-testid="button-send-reset-email">
-                          {isResetLoading ? t('common.loading') : t('auth.resetPasswordButton')}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </DialogContent>
-                </Dialog>
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-signin">
-                {isLoading ? t('auth.signingIn') : t('auth.signInButton')}
-              </Button>
-            </form>
-          </TabsContent>
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit" disabled={isResetLoading} data-testid="button-send-reset-email">
+                        {isResetLoading ? t('common.loading') : t('auth.resetPasswordButton')}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            </div>
+          )}
 
-          <TabsContent value="signup">
-            <form onSubmit={handleSignUp} className="space-y-4">
-              <div>
-                <Label htmlFor="signup-email">{t('auth.email')}</Label>
-                <Input
-                  id="signup-email"
-                  type="email"
-                  value={signUpData.email}
-                  onChange={(e) => setSignUpData({ ...signUpData, email: e.target.value })}
-                  required
-                  data-testid="input-signup-email"
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="signup-password">{t('auth.password')}</Label>
-                <Input
-                  id="signup-password"
-                  type="password"
-                  value={signUpData.password}
-                  onChange={(e) => setSignUpData({ ...signUpData, password: e.target.value })}
-                  required
-                  data-testid="input-signup-password"
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="signup-confirm-password">{t('auth.confirmPassword')}</Label>
-                <Input
-                  id="signup-confirm-password"
-                  type="password"
-                  value={signUpData.confirmPassword}
-                  onChange={(e) => setSignUpData({ ...signUpData, confirmPassword: e.target.value })}
-                  required
-                  data-testid="input-signup-confirm-password"
-                  className="mt-2"
-                />
-              </div>
-              <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-signup">
-                {isLoading ? t('auth.creatingAccount') : t('auth.signUpButton')}
-              </Button>
-            </form>
-          </TabsContent>
-        </Tabs>
+          {/* Submit button */}
+          <Button type="submit" className="w-full" disabled={isLoading} data-testid="button-submit">
+            {isLoading 
+              ? (authMode === 'signup' ? t('auth.creatingAccount') : t('auth.signingIn'))
+              : (authMode === 'signup' ? 'Crear cuenta y empezar' : t('auth.signInButton'))
+            }
+          </Button>
+        </form>
       </Card>
     </div>
   );
