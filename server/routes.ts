@@ -147,6 +147,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (error) throw error;
 
+      // Ensure profile exists in Replit PostgreSQL (create if missing)
+      if (data.user) {
+        const existingProfile = await storage.getProfile(data.user.id);
+        if (!existingProfile) {
+          console.log('Creating missing profile for user:', data.user.id);
+          await storage.createProfile({
+            id: data.user.id,
+            displayName: email.split('@')[0],
+            locale: 'en',
+          });
+        }
+      }
+
       res.json({ session: data.session, user: data.user });
     } catch (error: any) {
       console.error('Signin error:', error);
