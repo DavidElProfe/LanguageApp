@@ -8,6 +8,7 @@ import { z } from "zod";
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(), // No foreign key - Supabase manages auth
   displayName: text("display_name"),
+  email: text("email"), // User's email for easy reference
   locale: text("locale").default("en").notNull(),
   currentTopicId: uuid("current_topic_id"), // Track user's current/last topic for "continue learning"
   createdAt: timestamp("created_at").defaultNow().notNull(),

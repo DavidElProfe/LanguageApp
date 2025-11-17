@@ -111,20 +111,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.post("/api/auth/signup", async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, name } = req.body;
       
       const { data, error } = await supabaseAdmin.auth.admin.createUser({
         email,
         password,
         email_confirm: true,
+        user_metadata: {
+          full_name: name || email.split('@')[0],
+        },
       });
 
       if (error) throw error;
 
-      // Create profile
+      // Create profile with user's name and email
       await storage.createProfile({
         id: data.user.id,
-        displayName: email.split('@')[0],
+        displayName: name || email.split('@')[0],
+        email: email,
         locale: 'en',
       });
 
@@ -155,6 +159,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.createProfile({
             id: data.user.id,
             displayName: email.split('@')[0],
+            email: email,
             locale: 'en',
           });
         }
