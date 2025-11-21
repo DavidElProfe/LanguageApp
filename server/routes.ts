@@ -192,11 +192,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const profile = await storage.createProfile({
         id: id || req.user!.id,
         displayName: displayName || req.user!.email?.split('@')[0] || 'User',
+        email: req.user!.email,
         locale: locale || 'en',
       });
       res.json(profile);
     } catch (error: any) {
       console.error('Create profile error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Ensure profile exists for any authenticated user (including OAuth, existing users)
+  app.post("/api/profile/ensure", authenticateUser, async (req: AuthRequest, res) => {
+    try {
+      const { userId, email, name } = req.body;
+      const targetUserId = userId || req.user!.id;
+      const userEmail = email || req.user!.email;
+      
+      // Check if profile already exists
+      const existingProfile = await storage.getProfile(targetUserId);
+      
+      if (!existingProfile) {
+        // Create profile if it doesn't exist
+        console.log('Creating profile for user:', targetUserId);
+        const profile = await storage.createProfile({
+          id: targetUserId,
+          displayName: name || userEmail?.split('@')[0] || 'User',
+          email: userEmail,
+          locale: 'en',
+        });
+        res.json({ created: true, profile });
+      } else {
+        // Update email if missing
+        if (!existingProfile.email && userEmail) {
+          await storage.updateProfile(targetUserId, { email: userEmail });
+        }
+        res.json({ created: false, profile: existingProfile });
+      }
+    } catch (error: any) {
+      console.error('Ensure profile error:', error);
       res.status(500).json({ error: error.message });
     }
   });

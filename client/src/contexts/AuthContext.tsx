@@ -35,6 +35,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const { data: { session } } = await client.auth.getSession();
           setSession(session);
           setUser(session?.user ?? null);
+          
+          // Ensure profile exists for any authenticated user
+          if (session?.user) {
+            try {
+              const profileResponse = await fetch('/api/profile/ensure', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({
+                  userId: session.user.id,
+                  email: session.user.email,
+                  name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
+                }),
+              });
+              
+              if (!profileResponse.ok) {
+                console.error('Failed to ensure profile exists');
+              }
+            } catch (error) {
+              console.error('Error ensuring profile:', error);
+            }
+          }
+          
           setLoading(false);
           
           // Set up auth state listener
@@ -77,14 +102,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signIn = async (email: string, password: string) => {
-    const client = supabaseRef.current || await getSupabase();
-    const { data, error } = await client.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    // Call backend signin endpoint which ensures profile exists
+    const response = await fetch('/api/auth/signin', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email, password }),
+    });
     
-    // Update state immediately
-    if (data.session) {
-      setSession(data.session);
-      setUser(data.session.user);
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to sign in');
+    }
+    
+    const result = await response.json();
+    
+    // Update state
+    if (result.session) {
+      setSession(result.session);
+      setUser(result.user);
     }
   };
 
