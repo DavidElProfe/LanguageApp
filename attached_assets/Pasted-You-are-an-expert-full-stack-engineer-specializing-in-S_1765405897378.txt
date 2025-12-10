@@ -1,0 +1,59 @@
+You are an expert full-stack engineer specializing in Supabase Auth, Express API backends, Drizzle ORM, and NeonDB.  
+I need you to fully analyze my project and fix the root cause of these problems:
+
+1. The backend Express routes that require authentication return:
+   - “userId is required”
+   - or 401 Unauthorized
+   - or ECONNREFUSED when called from Postman or the frontend.
+
+2. I suspect a mismatch between:
+   - the Supabase auth token,
+   - my authenticateUser middleware in Express,
+   - the headers I am sending from the frontend or Postman.
+
+3. My architecture is hybrid:
+   - Supabase is ONLY used for authentication.
+   - All application data and schemas are stored in Neon PostgreSQL (not Supabase).
+   - Express uses a custom `authenticateUser()` middleware that calls `supabaseAdmin.auth.getUser(token)`.
+
+Your tasks:
+
+A. Inspect the entire backend codebase:
+   - `server/index.ts`
+   - `routes.ts`
+   - `authenticateUser` middleware
+   - any file under `/lib/supabase`
+   - the storage layer
+   - any Drizzle schema related to profiles or user sessions
+
+B. Confirm EXACTLY how the Authorization header is expected to be sent.
+   - Validate whether the backend expects `Bearer <access_token>` or any other format.
+   - Ensure the middleware correctly extracts `req.user.id`.
+
+C. Reproduce the failing request inside the agent workspace:
+   - Call POST /api/profile/ensure
+   - Call GET /api/dashboard/next-topic
+   - Call POST /api/ai-sessions/start
+   - Validate why `userId` is coming as undefined.
+
+D. Fix the problem automatically:
+   - If the middleware is wrong, correct it.
+   - If the token decoding is wrong, fix it.
+   - If Supabase admin client is misconfigured, fix it.
+   - If routes expect additional fields, update them.
+   - If the frontend is sending headers incorrectly, update fetch code accordingly.
+
+E. Validate the fix by:
+   - Running the backend locally on port 5000
+   - Testing an authenticated request with the working Authorization header
+
+F. Output:
+   - Exact explanation of the bug
+   - The code diffs needed to fix it
+   - The correct header format I must use in Postman and the frontend
+
+Important:
+- Do NOT suggest rewrites of the entire backend.
+- Fix only what is broken.
+- Keep compatibility with the existing architecture.
+- Ensure the Express API returns the correct `req.user.id` after auth.
