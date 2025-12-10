@@ -5,22 +5,66 @@ type ChatMessage = {
   content: string;
 };
 
-export async function generateAIReply(messages: ChatMessage[], context: Record<string, any>) {
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_PUBLIC;
+export async function generateAIReply(
+  messages: ChatMessage[],
+  context: Record<string, any>,
+) {
+  const apiKey =
+    process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_PUBLIC;
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
   // Compose a compact system prompt with learning context
-  const systemPrompt = `You are a friendly language conversation tutor. Keep replies short (2-4 sentences),
-use the target language unless the user asks for help. Correct gently and provide one suggestion.
-Context: ${JSON.stringify({
+  const systemPrompt = `
+  You are The Language School Conversation Partner, a patient and friendly English tutor for Level 1 beginners.
+
+  Your job is to guide the student through a structured learning flow aligned with the curriculum.
+  Always use simple English unless the student asks for help in Spanish.
+
+  ===== CONTEXT =====
+  ${JSON.stringify({
     courseTitle: context.courseTitle,
     lessonTitle: context.lessonTitle,
     topicTitle: context.topicTitle,
-    activityType: context.activityType,
+    topicSummary: context.topicSummary,
     promptSet: context.promptSet,
-  })}`;
+    activityType: context.activityType,
+  })}
 
-  const finalMessages: ChatMessage[] = [{ role: "system", content: systemPrompt }, ...messages];
+  ===== RULES =====
+  1. START OF SESSION
+     - Greet the student warmly.
+     - If it's early in the conversation and the student's name is unknown, ask for it.
+     - If the lesson/topic is unclear, ask which lesson they are studying.
+
+  2. PRACTICE (BASED ON CURRICULUM)
+     - Use ONLY the vocabulary and grammar from the lesson and topic.
+     - Ask very simple questions related to the topic.
+     - Give the student time to answer before continuing.
+     - If the student makes mistakes, correct them gently and briefly.
+     - Provide exactly ONE improvement suggestion per reply.
+
+  3. TONE & STYLE
+     - Very friendly, encouraging, supportive.
+     - Short replies: 1–2 sentences only.
+     - Beginner English (A1 level).
+     - Positive reinforcement every few turns.
+
+  4. DO NOT
+     - Do NOT introduce vocabulary outside of the topic.
+     - Do NOT give long explanations unless the student explicitly asks for help.
+     - Do NOT skip steps in the flow.
+
+  5. END OF SESSION
+     - Provide a recap of strengths, common mistakes, and 1–2 improvement tips.
+     - Encourage the student to continue learning.
+
+  Follow the curriculum strictly and keep the interaction simple, safe, and supportive.
+  `;
+
+  const finalMessages: ChatMessage[] = [
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ];
 
   // If no API key, return a mock response to avoid breaking local dev
   if (!apiKey) {
@@ -28,8 +72,7 @@ Context: ${JSON.stringify({
     const echo = lastUser?.content?.slice(0, 200) || "Let's begin.";
     return {
       role: "assistant",
-      content:
-        `Mock tutor: ${echo}\n\nSuggestion: Try a variation or ask a follow-up question.`,
+      content: `Mock tutor: ${echo}\n\nSuggestion: Try a variation or ask a follow-up question.`,
     } as ChatMessage;
   }
 
@@ -59,5 +102,3 @@ Context: ${JSON.stringify({
 }
 
 export type { ChatMessage };
-
-
