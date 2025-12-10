@@ -75,7 +75,7 @@ export const aiSessions = pgTable("ai_sessions", {
   userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   endedAt: timestamp("ended_at"),
-  state: text("state").default("INTRO").notNull(),
+  state: text("state").default("INTRO").notNull(), // <-- this atribute
 });
 
 // AI Session Messages table - stores conversation transcript

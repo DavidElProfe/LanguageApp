@@ -1,0 +1,54 @@
+I need to extend this project to support a structured, curriculum-based AI conversation flow for Level 1 English learners. The current system uses OpenAI Realtime API via WebRTC from the frontend, but the pedagogical control must move to the backend.
+
+Before writing any code, read ALL instructions carefully.
+
+IMPORTANT ARCHITECTURE REQUIREMENTS:
+- DO NOT modify any existing frontend WebRTC or OpenAI Realtime logic.
+- DO NOT remove or modify existing server/lib/ai.ts functions unless explicitly instructed.
+- DO NOT touch server/db.ts or Supabase auth logic.
+- DO NOT modify shared/models or shared/schema except adding a required field.
+- We only ADD new backend logic, we DO NOT break existing functionality.
+
+WHAT I NEED ADDED (SERVER-SIDE ONLY):
+
+1. Create a new folder:
+   server/ai/
+
+2. Add these new files with clean, modular TypeScript code:
+   - server/ai/stateMachine.ts
+   - server/ai/prompts.ts
+   - server/ai/context.ts
+   - server/ai/flowEngine.ts
+
+3. State machine:
+   Simple flow: INTRO → ASK_NAME → ASK_LESSON → PRACTICE → FEEDBACK → END.
+
+4. Dynamic prompt builder:
+   The backend must generate the SYSTEM message dynamically using:
+   - session.state
+   - topic, lesson, course titles
+   - topic summary
+   - optional promptSet from activities table
+
+5. Modify ONLY ONE backend route:
+   POST /api/realtime/session (found in server/routes.ts):
+   - Retrieve or create ai_session for the user
+   - Load topic/lesson/course context from DB
+   - Load session.state
+   - Build realtime SYSTEM prompt using new flowEngine.ts
+   - Return the ephemeral token AND the constructed initial prompt
+
+6. Add ONE new column to ai_sessions in shared/schema.ts:
+   state: text("state").default("INTRO").notNull()
+
+7. DO NOT write migrations automatically; just modify the schema file.
+
+8. After generating the code:
+   - Print ALL new files
+   - Print the updated parts of server/routes.ts
+   - Print the updated part of shared/schema.ts
+   - DO NOT generate unrelated changes
+
+9. All code must be clean, type-safe, and follow the existing project style.
+
+WAIT for my confirmation before applying changes.
