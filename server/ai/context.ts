@@ -117,3 +117,19 @@ export async function updateSessionState(
     console.error("Error updating session state:", error);
   }
 }
+
+export async function saveMessage(
+  sessionId: string,
+  role: "user" | "assistant",
+  content: string
+): Promise<void> {
+  try {
+    await db.insert(schema.aiSessionMessages).values({
+      sessionId,
+      role,
+      content,
+    });
+  } catch (error) {
+    console.error("Error saving message:", error);
+  }
+}
