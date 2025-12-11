@@ -498,22 +498,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI chat endpoint
   app.post("/api/ai/chat", authenticateUser, async (req: AuthRequest, res) => {
     try {
-      const { messages, context } = req.body || {};
-      if (!Array.isArray(messages)) {
-        return res.status(400).json({ error: "messages must be an array" });
+      const { messages, context, sessionId, userMessage } = req.body || {};
+      
+      if (!sessionId) {
+        return res.status(400).json({ error: "sessionId is required" });
+      }
+      
+      // Get the last user message if not provided directly
+      const lastUserMessage = userMessage || 
+        (Array.isArray(messages) ? messages.filter((m: any) => m.role === "user").pop()?.content : null);
+      
+      if (!lastUserMessage) {
+        return res.status(400).json({ error: "userMessage is required" });
       }
 
       const safeContext = {
         courseTitle: context?.courseTitle || null,
         lessonTitle: context?.lessonTitle || null,
         topicTitle: context?.topicTitle || null,
+        topicId: context?.topicId || null,
         activityType: context?.activityType || null,
         promptSet: Array.isArray(context?.promptSet) ? context.promptSet.slice(0, 10) : [],
-        userId: req.user?.id,
+        userId: req.user!.id,
+        sessionId,
+        userMessage: lastUserMessage,
       };
 
-      const reply = await generateAIReply(messages, safeContext);
-      res.json({ message: reply });
+      const reply = await generateAIReply(Array.isArray(messages) ? messages : [], safeContext);
+      res.json({ 
+        message: reply,
+        state: reply.state,
+      });
     } catch (error: any) {
       console.error("AI chat error:", error);
       res.status(500).json({ error: error.message || "AI error" });

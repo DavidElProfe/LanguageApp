@@ -1,96 +1,130 @@
-import { loadSessionContext, updateSessionState, saveMessage } from "../ai/context";
+// server/lib/ai.ts
+
+import { getStatePrompt } from "../ai/prompts";
+import { loadSessionContext, updateSessionState } from "../ai/context";
+import { getNextState, isValidState, type ConversationState } from "../ai/stateMachine";
 import { buildRealtimeSystemPrompt } from "../ai/flowEngine";
-import { getNextState, isValidState } from "../ai/stateMachine";
-import type { ConversationState } from "../ai/stateMachine";
+import { db } from "../db";
+import * as schema from "@shared/schema";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string;
 };
 
-export interface GenerateAIReplyParams {
-  userMessage: string;
-  userId: string;
-  sessionId: string;
-  topicId?: string;
-  conversationHistory?: ChatMessage[];
-}
-
-export interface GenerateAIReplyResult {
-  response: ChatMessage;
-  newState: ConversationState | null;
-  currentState: ConversationState;
-}
-
+/**
+ * MAIN AI ENGINE FUNCTION
+ * MVP Phase 1 Flow:
+ * 1. Load session + curriculum context
+ * 2. Build dynamic prompts (state machine + curriculum)
+ * 3. Save user message
+ * 4. Call OpenAI
+ * 5. Save assistant reply
+ * 6. Advance state
+ * 7. Return response + new state
+ */
 export async function generateAIReply(
-  params: GenerateAIReplyParams
-): Promise<GenerateAIReplyResult> {
-  const { userMessage, userId, sessionId, topicId, conversationHistory = [] } = params;
-
-  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_PUBLIC;
+  messages: ChatMessage[],
+  context: Record<string, any>,
+) {
+  const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-  // 1. Cargar sesión
-  const context = await loadSessionContext(userId, sessionId, topicId);
+  const { sessionId, userId, userMessage } = context;
 
-  // 2. Construir systemPrompt con buildRealtimeSystemPrompt()
-  const { systemPrompt, state: currentState } = buildRealtimeSystemPrompt(context);
+  if (!sessionId || !userId) {
+    throw new Error("Missing sessionId or userId in generateAIReply()");
+  }
 
-  // 3. Guardar mensaje del usuario
-  await saveMessage(sessionId, "user", userMessage);
+  // 1️⃣ LOAD CONTEXT (course, lesson, topic, state)
+  const sessionContext = await loadSessionContext(
+    userId,
+    sessionId,
+    context.topicId,
+  );
 
-  // 4. Preparar mensajes para OpenAI
-  const messages: ChatMessage[] = [
+  // 2️⃣ BUILD DYNAMIC PROMPT (state machine + curriculum)
+  const { systemPrompt } = buildRealtimeSystemPrompt(sessionContext);
+
+  const rawState = sessionContext.state;
+  const state: ConversationState = isValidState(rawState)
+    ? rawState
+    : "INTRO";
+
+  const statePrompt = getStatePrompt(state, sessionContext);
+
+  // 3️⃣ SAVE USER MESSAGE
+  if (userMessage) {
+    await db.insert(schema.aiSessionMessages).values({
+      sessionId,
+      role: "user",
+      content: userMessage,
+    });
+  }
+
+  // 4️⃣ BUILD FINAL MESSAGE LIST
+  // Remove only the last message if it duplicates the current userMessage
+  let history = [...messages];
+  const lastMsg = history[history.length - 1];
+  if (lastMsg && lastMsg.role === "user" && lastMsg.content === userMessage) {
+    history = history.slice(0, -1);
+  }
+  
+  const finalMessages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
-    ...conversationHistory,
+    { role: "system", content: statePrompt },
+    ...history,
     { role: "user", content: userMessage },
   ];
 
-  let responseContent: string;
-
-  // MOCK MODE (SIN API KEY)
+  // If API key missing → mock mode
   if (!apiKey) {
-    responseContent = `Mock tutor: ${userMessage.slice(0, 200)}\n\nSuggestion: Try a variation or ask a follow-up question.`;
-  } else {
-    // 5. Enviar a OpenAI
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.6,
-        presence_penalty: 0.2,
-        frequency_penalty: 0.2,
-      }),
-    });
-
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(`AI request failed: ${response.status} ${text}`);
-    }
-
-    const data = await response.json();
-    responseContent = data?.choices?.[0]?.message?.content || "(No response)";
+    return {
+      role: "assistant",
+      content: `Mock tutor: ${userMessage}`,
+      state,
+    };
   }
 
-  // 6. Guardar respuesta del assistant
-  await saveMessage(sessionId, "assistant", responseContent);
+  // 5️⃣ CALL OPENAI
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: finalMessages,
+      temperature: 0.4,
+      max_tokens: 120,
+    }),
+  });
 
-  // 7. Avanzar estado con getNextState() + updateSessionState()
-  const nextState = getNextState(currentState);
-  if (nextState) {
-    await updateSessionState(sessionId, nextState);
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`AI request failed: ${response.status} ${text}`);
   }
 
-  // 8. Devolver respuesta + nuevo estado
+  const data = await response.json();
+  const aiReply = data?.choices?.[0]?.message?.content || "(No response)";
+
+  // 6️⃣ SAVE ASSISTANT RESPONSE
+  await db.insert(schema.aiSessionMessages).values({
+    sessionId,
+    role: "assistant",
+    content: aiReply,
+  });
+
+  // 7️⃣ ADVANCE STATE
+  const newState = getNextState(state) || state;
+  await updateSessionState(sessionId, newState);
+
+  // 8️⃣ RETURN
   return {
-    response: { role: "assistant", content: responseContent },
-    newState: nextState,
-    currentState,
+    role: "assistant",
+    content: aiReply,
+    state: newState,
   };
 }
 
