@@ -498,29 +498,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // AI chat endpoint
   app.post("/api/ai/chat", authenticateUser, async (req: AuthRequest, res) => {
     try {
-      const { message, sessionId, topicId, conversationHistory } = req.body || {};
-      
-      if (!message || typeof message !== "string") {
-        return res.status(400).json({ error: "message is required" });
-      }
-      
-      if (!sessionId || typeof sessionId !== "string") {
-        return res.status(400).json({ error: "sessionId is required" });
+      const { messages, context } = req.body || {};
+      if (!Array.isArray(messages)) {
+        return res.status(400).json({ error: "messages must be an array" });
       }
 
-      const result = await generateAIReply({
-        userMessage: message,
-        userId: req.user!.id,
-        sessionId,
-        topicId,
-        conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
-      });
+      const safeContext = {
+        courseTitle: context?.courseTitle || null,
+        lessonTitle: context?.lessonTitle || null,
+        topicTitle: context?.topicTitle || null,
+        activityType: context?.activityType || null,
+        promptSet: Array.isArray(context?.promptSet) ? context.promptSet.slice(0, 10) : [],
+        userId: req.user?.id,
+      };
 
-      res.json({
-        message: result.response,
-        currentState: result.currentState,
-        newState: result.newState,
-      });
+      const reply = await generateAIReply(messages, safeContext);
+      res.json({ message: reply });
     } catch (error: any) {
       console.error("AI chat error:", error);
       res.status(500).json({ error: error.message || "AI error" });
