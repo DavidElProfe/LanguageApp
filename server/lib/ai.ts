@@ -1,4 +1,5 @@
 import type { Request } from "express";
+import { getStatePrompt } from "../ai/prompts";
 
 type ChatMessage = {
   role: "system" | "user" | "assistant";
@@ -13,7 +14,7 @@ export async function generateAIReply(
     process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_PUBLIC;
   const model = process.env.OPENAI_MODEL || "gpt-4o-mini";
 
-  // Compose a compact system prompt with learning context
+  // SYSTEM PROMPT BASE
   const systemPrompt = `
   You are The Language School Conversation Partner, a patient and friendly English tutor for Level 1 beginners.
 
@@ -21,14 +22,18 @@ export async function generateAIReply(
   Always use simple English unless the student asks for help in Spanish.
 
   ===== CONTEXT =====
-  ${JSON.stringify({
-    courseTitle: context.courseTitle,
-    lessonTitle: context.lessonTitle,
-    topicTitle: context.topicTitle,
-    topicSummary: context.topicSummary,
-    promptSet: context.promptSet,
-    activityType: context.activityType,
-  })}
+  ${JSON.stringify(
+    {
+      courseTitle: context.courseTitle,
+      lessonTitle: context.lessonTitle,
+      topicTitle: context.topicTitle,
+      topicSummary: context.topicSummary,
+      promptSet: context.promptSet,
+      activityType: context.activityType,
+    },
+    null,
+    2,
+  )}
 
   ===== RULES =====
   1. START OF SESSION
@@ -37,7 +42,7 @@ export async function generateAIReply(
      - If the lesson/topic is unclear, ask which lesson they are studying.
 
   2. PRACTICE (BASED ON CURRICULUM)
-     - Use ONLY the vocabulary and grammar from the lesson and topic.
+     - Use ONLY vocabulary and grammar from the lesson and topic.
      - Ask very simple questions related to the topic.
      - Give the student time to answer before continuing.
      - If the student makes mistakes, correct them gently and briefly.
@@ -61,12 +66,17 @@ export async function generateAIReply(
   Follow the curriculum strictly and keep the interaction simple, safe, and supportive.
   `;
 
+  // 🎯  AGREGAMOS EL STATE PROMPT AQUÍ
+  const statePrompt = getStatePrompt(context.state, context);
+
+  // 🔥 ESTA ES LA VERSIÓN FINAL DE LOS MENSAJES ENVIADOS A OPENAI
   const finalMessages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
+    { role: "system", content: statePrompt }, // <-- CLAVE DEL FLUJO
     ...messages,
   ];
 
-  // If no API key, return a mock response to avoid breaking local dev
+  // MOCK MODE (SIN API KEY)
   if (!apiKey) {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const echo = lastUser?.content?.slice(0, 200) || "Let's begin.";
@@ -76,6 +86,7 @@ export async function generateAIReply(
     } as ChatMessage;
   }
 
+  // REAL OPENAI REQUEST
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -98,6 +109,7 @@ export async function generateAIReply(
 
   const data = await response.json();
   const content = data?.choices?.[0]?.message?.content || "(No response)";
+
   return { role: "assistant", content } as ChatMessage;
 }
 
