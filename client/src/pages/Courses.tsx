@@ -1,24 +1,39 @@
-import { useLocation } from 'wouter';
-import { useQuery } from '@tanstack/react-query';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { useAuth } from '@/contexts/AuthContext';
-import Navbar from '@/components/Navbar';
-import Footer from '@/components/Footer';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
-import { BookOpen } from 'lucide-react';
+import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { BookOpen } from "lucide-react";
 
 export default function Courses() {
   const [, setLocation] = useLocation();
   const { t } = useLanguage();
   const { user } = useAuth();
 
-  const { data: courses = [], isLoading, error } = useQuery<any[]>({
-    queryKey: ['/api/courses'],
+  const {
+    data: courses = [],
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["/api/courses"],
+    queryFn: async () => {
+      const res = await fetch("/api/courses");
+      if (!res.ok) throw new Error("Failed to load courses");
+      return res.json();
+    },
   });
 
   const { data: completions = [] } = useQuery({
-    queryKey: ['/api/completions'],
+    queryKey: ["/api/completions"],
     queryFn: async () => {
       // Reuse Supabase singleton token if available (same approach as TopicDetail)
       if (globalThis.__supabaseInitPromise) {
@@ -26,8 +41,8 @@ export default function Courses() {
       }
       const client = (globalThis as any).__supabaseClient;
       const { data } = await client?.auth.getSession();
-      const token = data?.session?.access_token || '';
-      const res = await fetch('/api/completions', {
+      const token = data?.session?.access_token || "";
+      const res = await fetch("/api/completions", {
         headers: { Authorization: `Bearer ${token}` },
       });
       return res.json();
@@ -41,36 +56,57 @@ export default function Courses() {
 
       <main className="flex-1 py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6">
-          <h1 className="text-3xl md:text-4xl font-bold mb-8" data-testid="text-courses-title">
-            {t('practice.title')}
+          <h1
+            className="text-3xl md:text-4xl font-bold mb-8"
+            data-testid="text-courses-title"
+          >
+            {t("practice.title")}
           </h1>
 
           {isLoading ? (
             <div className="text-center py-12" data-testid="text-loading">
-              {t('common.loading')}
+              {t("common.loading")}
             </div>
           ) : error ? (
             <div className="text-center py-12" data-testid="text-error">
-              <p className="text-destructive mb-4">{t('common.error')}</p>
+              <p className="text-destructive mb-4">{t("common.error")}</p>
               <p className="text-sm text-muted-foreground">
-                {error instanceof Error ? error.message : 'Error al cargar los cursos'}
+                {error instanceof Error
+                  ? error.message
+                  : "Error al cargar los cursos"}
               </p>
             </div>
           ) : courses.length === 0 ? (
             <div className="text-center py-12" data-testid="text-no-courses">
-              <p className="text-muted-foreground">No hay cursos disponibles en este momento.</p>
+              <p className="text-muted-foreground">
+                No hay cursos disponibles en este momento.
+              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {courses.map((course: any) => {
-                const allActivities = (course.lessons || []).flatMap((l: any) => (l.topics || []).flatMap((t: any) => t.activities || []));
+                const allActivities = (course.lessons || []).flatMap((l: any) =>
+                  (l.topics || []).flatMap((t: any) => t.activities || []),
+                );
                 const totalActivities = allActivities.length;
-                const safeCompletions = Array.isArray(completions) ? completions : [];
-                const completedSet = new Set(safeCompletions.map((c: any) => c.activityId));
-                const completedCount = allActivities.filter((a: any) => completedSet.has(a.id)).length;
-                const progressPercent = totalActivities > 0 ? Math.round((completedCount / totalActivities) * 100) : 0;
-                const completedLabel = t('common.completed');
-                const completedText = completedLabel === 'common.completed' ? 'completadas' : completedLabel;
+                const safeCompletions = Array.isArray(completions)
+                  ? completions
+                  : [];
+                const completedSet = new Set(
+                  safeCompletions.map((c: any) => c.activityId),
+                );
+                const completedCount = allActivities.filter((a: any) =>
+                  completedSet.has(a.id),
+                ).length;
+                const progressPercent =
+                  totalActivities > 0
+                    ? Math.round((completedCount / totalActivities) * 100)
+                    : 0;
+                const completedLabel = t("common.completed");
+                const completedText =
+                  completedLabel === "common.completed"
+                    ? "completadas"
+                    : completedLabel;
 
                 return (
                   <Card
@@ -93,8 +129,12 @@ export default function Courses() {
                     {user && (
                       <CardContent>
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm text-muted-foreground">{completedCount} / {totalActivities} {completedText}</span>
-                          <span className="text-sm font-medium">{progressPercent}%</span>
+                          <span className="text-sm text-muted-foreground">
+                            {completedCount} / {totalActivities} {completedText}
+                          </span>
+                          <span className="text-sm font-medium">
+                            {progressPercent}%
+                          </span>
                         </div>
                         <Progress value={progressPercent} className="h-2" />
                       </CardContent>
