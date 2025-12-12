@@ -35,7 +35,6 @@ export default function Courses() {
   const { data: completions = [] } = useQuery({
     queryKey: ["/api/completions"],
     queryFn: async () => {
-      // Reuse Supabase singleton token if available (same approach as TopicDetail)
       if (globalThis.__supabaseInitPromise) {
         await globalThis.__supabaseInitPromise;
       }
@@ -49,6 +48,10 @@ export default function Courses() {
     },
     enabled: !!user,
   });
+
+  const visibleCourses = courses.filter(
+    (course: any) => course.title !== "Fundamentos de Inglés 1",
+  );
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -76,7 +79,7 @@ export default function Courses() {
                   : "Error al cargar los cursos"}
               </p>
             </div>
-          ) : courses.length === 0 ? (
+          ) : visibleCourses.length === 0 ? (
             <div className="text-center py-12" data-testid="text-no-courses">
               <p className="text-muted-foreground">
                 No hay cursos disponibles en este momento.
@@ -84,7 +87,7 @@ export default function Courses() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {courses.map((course: any) => {
+              {visibleCourses.map((course: any) => {
                 const allActivities = (course.lessons || []).flatMap((l: any) =>
                   (l.topics || []).flatMap((t: any) => t.activities || []),
                 );

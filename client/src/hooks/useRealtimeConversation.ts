@@ -18,7 +18,8 @@ interface UseRealtimeConversationReturn {
 }
 
 export function useRealtimeConversation(): UseRealtimeConversationReturn {
-  const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
+  const [connectionState, setConnectionState] =
+    useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
 
@@ -30,7 +31,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
 
   // Initialize Supabase on mount to ensure auth is available
   useEffect(() => {
-    import('@/lib/supabase').then(({ getSupabase }) => {
+    import("@/lib/supabase").then(({ getSupabase }) => {
       getSupabase().catch((error) => {
         console.error("Failed to initialize Supabase:", error);
       });
@@ -38,26 +39,31 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
   }, []);
 
   // Helper function to save message to backend (non-blocking)
-  const saveMessageToBackend = async (role: "user" | "assistant", content: string) => {
+  const saveMessageToBackend = async (
+    role: "user" | "assistant",
+    content: string,
+  ) => {
     if (!sessionIdRef.current || !content.trim()) return;
-    
+
     try {
       if (globalThis.__supabaseInitPromise) {
         await globalThis.__supabaseInitPromise;
       }
       const supabase = globalThis.__supabaseClient;
-      
+
       if (!supabase) return;
 
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session?.access_token) return;
 
       await fetch(`/api/ai-sessions/${sessionIdRef.current}/messages`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({ role, content }),
       });
@@ -72,13 +78,13 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
       // Can't use async in cleanup, so fire and forget
       stopConversation().catch(console.error);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopConversation = async () => {
     // Capture the session ID BEFORE clearing the ref
     const sessionId = sessionIdRef.current;
-    
+
     // End the AI session in the database (fire and forget)
     if (sessionId) {
       const endSession = async () => {
@@ -87,18 +93,20 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
             await globalThis.__supabaseInitPromise;
           }
           const supabase = globalThis.__supabaseClient;
-          
+
           if (!supabase) return;
 
-          const { data: { session } } = await supabase.auth.getSession();
-          
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
           if (!session?.access_token) return;
 
           const response = await fetch(`/api/ai-sessions/end/${sessionId}`, {
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.access_token}`,
+              "Content-Type": "application/json",
             },
           });
 
@@ -111,7 +119,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
           console.error("⚠️ Error ending AI session:", error);
         }
       };
-      
+
       // Fire and forget - don't block cleanup
       endSession();
       sessionIdRef.current = null;
@@ -166,21 +174,25 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
           await globalThis.__supabaseInitPromise;
         }
         const supabase = globalThis.__supabaseClient;
-        
+
         if (supabase) {
-          const { data: { session } } = await supabase.auth.getSession();
-          
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
           if (session?.access_token) {
-            const response = await fetch('/api/ai-sessions/start', {
-              method: 'POST',
+            const response = await fetch("/api/ai-sessions/start", {
+              method: "POST",
               headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                'Content-Type': 'application/json',
+                Authorization: `Bearer ${session.access_token}`,
+                "Content-Type": "application/json",
               },
             });
 
             if (!response.ok) {
-              console.error("⚠️ Failed to create AI session record - conversation won't be tracked");
+              console.error(
+                "⚠️ Failed to create AI session record - conversation won't be tracked",
+              );
             } else {
               const data = await response.json();
               sessionIdRef.current = data.id;
@@ -190,10 +202,15 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
             console.warn("⚠️ No auth session - conversation won't be tracked");
           }
         } else {
-          console.warn("⚠️ Supabase not initialized - conversation won't be tracked");
+          console.warn(
+            "⚠️ Supabase not initialized - conversation won't be tracked",
+          );
         }
       } catch (error) {
-        console.error("⚠️ Error starting AI session - conversation won't be tracked:", error);
+        console.error(
+          "⚠️ Error starting AI session - conversation won't be tracked:",
+          error,
+        );
       }
 
       // Get ephemeral token from backend
@@ -222,8 +239,12 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
+          autoGainControl: true,
+          channelCount: 1,
+          sampleRate: 48000,
         },
       });
+
       mediaStreamRef.current = ms;
       ms.getTracks().forEach((track) => pc.addTrack(track, ms));
 
@@ -237,7 +258,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
         dc.send(
           JSON.stringify({
             type: "response.create",
-          })
+          }),
         );
       });
 
@@ -245,9 +266,12 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
       dc.addEventListener("message", (event) => {
         try {
           const data = JSON.parse(event.data);
-          
+
           // Handle transcript events
-          if (data.type === "conversation.item.input_audio_transcription.completed") {
+          if (
+            data.type ===
+            "conversation.item.input_audio_transcription.completed"
+          ) {
             const userMessage = data.transcript || "";
             setMessages((prev) => [
               ...prev,
@@ -294,7 +318,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
             "OpenAI-Beta": "realtime=v1",
           },
           body: offer.sdp,
-        }
+        },
       );
 
       if (!sdpRes.ok) throw new Error("Error al conectar con OpenAI");
@@ -307,7 +331,9 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
     } catch (error) {
       console.error("Error starting conversation:", error);
       setErrorMessage(
-        error instanceof Error ? error.message : "Error al iniciar la conversación"
+        error instanceof Error
+          ? error.message
+          : "Error al iniciar la conversación",
       );
       setConnectionState("error");
       stopConversation();
