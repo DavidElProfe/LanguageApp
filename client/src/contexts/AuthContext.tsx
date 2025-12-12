@@ -118,8 +118,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     
     const result = await response.json();
     
-    // Update state
+    // Hydrate the Supabase client with the session from backend
+    // This ensures getAuthHeaders() can access the session
     if (result.session) {
+      const client = supabaseRef.current || await getSupabase();
+      await client.auth.setSession({
+        access_token: result.session.access_token,
+        refresh_token: result.session.refresh_token,
+      });
+      
+      // Update state
       setSession(result.session);
       setUser(result.user);
     }
