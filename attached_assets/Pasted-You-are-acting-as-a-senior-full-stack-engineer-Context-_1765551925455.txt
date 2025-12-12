@@ -1,0 +1,86 @@
+You are acting as a senior full-stack engineer.
+
+Context:
+This project is a language learning platform with structured courses.
+The UI shows student progress (completed activities, streak, last activity),
+but progress is currently NOT being tracked.
+
+Available tables:
+• profiles
+• courses
+• lessons
+• topics
+• activities
+• activity_completions
+• ai_sessions
+• ai_session_messages
+
+Problem:
+The UI always shows 0 progress because no activity completion logic
+is being executed or persisted.
+
+Your task:
+Design and implement proper progress tracking per student.
+
+===== REQUIRED BEHAVIOR =====
+
+1. Activity completion must be tracked PER STUDENT.
+2. Progress must be derived ONLY from `activity_completions`.
+3. The UI must never calculate progress from AI messages alone.
+
+===== DATA MODEL EXPECTATION =====
+
+Use `activity_completions` as the source of truth.
+
+Each record must represent:
+• user_id (profile.id)
+• activity_id
+• completed_at (timestamp)
+• optional: ai_session_id
+
+A student completes an activity ONLY when:
+• The system explicitly marks it as completed
+• NOT when messages are sent
+• NOT when a session is created
+
+===== FLOW TO IMPLEMENT =====
+
+1. Student opens an activity
+2. System creates or resumes an ai_session
+3. Student interacts with the AI
+4. WHEN the activity objective is fulfilled:
+   → Backend must insert a record into activity_completions
+5. UI progress queries must aggregate from activity_completions:
+   • total activities in course
+   • completed activities by user
+   • last completed activity date
+   • streak calculation
+
+===== UI METRICS DEFINITION =====
+
+• “Actividades Completadas” =
+  COUNT(activity_completions WHERE user_id = X)
+
+• “Última Actividad” =
+  MAX(completed_at) for user
+
+• “Progreso %” =
+  completed_activities / total_activities_in_course
+
+• “Racha” =
+  consecutive days with ≥1 activity completion
+
+===== CONSTRAINTS =====
+
+• Do NOT infer completion from chat length
+• Do NOT auto-complete activities
+• Do NOT mix ai_sessions with progress logic
+• Completion is a backend decision, not an AI guess
+
+===== DELIVERABLE =====
+
+• Ensure activity_completions is written correctly
+• Ensure progress endpoints read from it
+• Ensure UI reflects real progress
+
+If progress is not stored, it does not exist.
