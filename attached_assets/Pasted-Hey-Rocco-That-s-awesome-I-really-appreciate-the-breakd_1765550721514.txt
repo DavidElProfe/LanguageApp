@@ -1,0 +1,52 @@
+Hey Rocco,
+That’s awesome — I really appreciate the breakdown. The cost is incredibly reasonable and gives us lots of room to grow.
+
+
+Let’s definitely stick with gpt-4o-mini for now, especially if performance looks good. I love that everything runs through our own backend and that we can control the whole experience, both from a pedagogical and brand perspective.
+
+
+Yes, please go ahead and keep building out the rest of the flow. I’d also be interested in seeing how the recap logic works — how the bot identifies strengths and areas to review based on mistakes. That part is key to giving students that personalized, uplifting feedback.
+
+Yes, you’re exactly right — I was referring to that AI chat.
+
+
+Please go ahead and add Fundamentos de Inglés 1 as the first course.
+
+
+We will eventually add videos and flashcards, but the AI conversation partner is what my students are most excited about and seems to be the easiest and fastest feature to build.
+
+
+The goal is for the AI to behave like a friendly conversation partner who follows the flow of each lesson, as if the student were meeting a friend at a café to practice English together.
+
+
+Here’s a quick breakdown of the flow I’m imagining:
+
+
+1. Introduction
+→ The AI should greet the student, introduce itself as The Language School’s Conversation Partner, and ask for their name.
+
+
+2. Lesson Detection
+→ Ask which lesson they are on from Fundamentos de Inglés 1. (e.g. “Which lesson are you working on today?”)
+
+
+3. Simulated Conversation Based on the Lesson
+→ Once the student answers, the AI should reference the book and create a friendly, natural conversation using only the grammar and vocabulary from that lesson. It should feel relaxed and fun, like chatting with a friend.
+
+
+4. Support During Chat
+→ If the student makes a mistake, the AI can gently correct them.
+→ If they seem confused, it can explain simply or rephrase.
+→ Throughout, it should give lots of praise and encouragement — think Dale Carnegie style.
+
+
+5. End-of-Session Recap
+→ At the end, the AI gives a short summary:
+• What the student did well
+• One or two things to review for next time
+
+
+Let me know if you need help mapping out the specific flow for each lesson or how to structure the logic. I’m happy to support with that.
+
+
+Thanks again! Go ahead and get started when you’re ready.
