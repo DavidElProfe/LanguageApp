@@ -9,6 +9,7 @@ const openai = new OpenAI({
 
 assistantRouter.get("/realtime-token", async (req, res) => {
   try {
+    console.log("USANDO PROMPT DE assistantRoutes.ts");
     // Fixed instructions - NO dependency on course/lesson/topic data
     const instructions = `You are The Language School's Conversation Partner.
 

@@ -2,7 +2,11 @@
 
 import { getStatePrompt } from "../ai/prompts";
 import { loadSessionContext, updateSessionState } from "../ai/context";
-import { getNextState, isValidState, type ConversationState } from "../ai/stateMachine";
+import {
+  getNextState,
+  isValidState,
+  type ConversationState,
+} from "../ai/stateMachine";
 import { buildRealtimeSystemPrompt } from "../ai/flowEngine";
 import { db } from "../db";
 import * as schema from "@shared/schema";
@@ -47,9 +51,7 @@ export async function generateAIReply(
   const { systemPrompt } = buildRealtimeSystemPrompt(sessionContext);
 
   const rawState = sessionContext.state;
-  const state: ConversationState = isValidState(rawState)
-    ? rawState
-    : "INTRO";
+  const state: ConversationState = isValidState(rawState) ? rawState : "INTRO";
 
   const statePrompt = getStatePrompt(state, sessionContext);
 
@@ -69,13 +71,20 @@ export async function generateAIReply(
   if (lastMsg && lastMsg.role === "user" && lastMsg.content === userMessage) {
     history = history.slice(0, -1);
   }
-  
+
   const finalMessages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "system", content: statePrompt },
     ...history,
     { role: "user", content: userMessage },
   ];
+
+  console.log("🧠 SYSTEM PROMPT ===>");
+  console.log(systemPrompt);
+  console.log("🎯 STATE PROMPT ===>");
+  console.log(statePrompt);
+  console.log("📩 FINAL MESSAGES ===>");
+  console.dir(finalMessages, { depth: null });
 
   // If API key missing → mock mode
   if (!apiKey) {
