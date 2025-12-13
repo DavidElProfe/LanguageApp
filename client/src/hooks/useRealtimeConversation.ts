@@ -22,15 +22,17 @@ interface UseRealtimeConversationReturn {
   stopConversation: () => Promise<void>;
 }
 
-export function useRealtimeConversation(options: UseRealtimeConversationOptions = {}): UseRealtimeConversationReturn {
+export function useRealtimeConversation(
+  options: UseRealtimeConversationOptions = {},
+): UseRealtimeConversationReturn {
   const { lesson = 1 } = options;
+
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
-  const [errorMessage, setErrorMessage] = useState<string>("");
+  const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [confirmedLesson, setConfirmedLesson] = useState<number>(lesson);
-  
-  // Use ref to always have the latest lesson value for startConversation
+
   const lessonRef = useRef<number>(lesson);
   lessonRef.current = lesson;
 
@@ -39,24 +41,26 @@ export function useRealtimeConversation(options: UseRealtimeConversationOptions 
   const dcRef = useRef<RTCDataChannel | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  
-  // Sync confirmedLesson when lesson prop changes (only when not in active session)
+
+  // 👉 guarda la última frase del usuario (NO renderiza)
+  const lastUserTranscriptRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (connectionState === "idle" || connectionState === "ended" || connectionState === "error") {
+    if (
+      connectionState === "idle" ||
+      connectionState === "ended" ||
+      connectionState === "error"
+    ) {
       setConfirmedLesson(lesson);
     }
   }, [lesson, connectionState]);
 
-  // Initialize Supabase on mount to ensure auth is available
   useEffect(() => {
     import("@/lib/supabase").then(({ getSupabase }) => {
-      getSupabase().catch((error) => {
-        console.error("Failed to initialize Supabase:", error);
-      });
+      getSupabase().catch(console.error);
     });
   }, []);
 
-  // Helper function to save message to backend (non-blocking)
   const saveMessageToBackend = async (
     role: "user" | "assistant",
     content: string,
@@ -67,8 +71,8 @@ export function useRealtimeConversation(options: UseRealtimeConversationOptions 
       if (globalThis.__supabaseInitPromise) {
         await globalThis.__supabaseInitPromise;
       }
-      const supabase = globalThis.__supabaseClient;
 
+      const supabase = globalThis.__supabaseClient;
       if (!supabase) return;
 
       const {
@@ -90,93 +94,44 @@ export function useRealtimeConversation(options: UseRealtimeConversationOptions 
     }
   };
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      // Can't use async in cleanup, so fire and forget
       stopConversation().catch(console.error);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopConversation = async () => {
-    // Capture the session ID BEFORE clearing the ref
     const sessionId = sessionIdRef.current;
 
-    // End the AI session in the database (fire and forget)
     if (sessionId) {
-      const endSession = async () => {
-        try {
-          if (globalThis.__supabaseInitPromise) {
-            await globalThis.__supabaseInitPromise;
-          }
-          const supabase = globalThis.__supabaseClient;
-
-          if (!supabase) return;
-
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-
-          if (!session?.access_token) return;
-
-          const response = await fetch(`/api/ai-sessions/end/${sessionId}`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-              "Content-Type": "application/json",
-            },
-          });
-
-          if (!response.ok) {
-            console.error("⚠️ Failed to update AI session end time");
-          } else {
-            console.log("✅ AI session ended:", sessionId);
-          }
-        } catch (error) {
-          console.error("⚠️ Error ending AI session:", error);
-        }
-      };
-
-      // Fire and forget - don't block cleanup
-      endSession();
+      fetch(`/api/ai-sessions/end/${sessionId}`, { method: "POST" }).catch(
+        console.error,
+      );
       sessionIdRef.current = null;
     }
 
-    // Stop media stream tracks first (critical for privacy)
     if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((track) => {
-        track.stop();
-      });
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       mediaStreamRef.current = null;
     }
 
-    // Close data channel
     if (dcRef.current) {
-      try {
-        dcRef.current.close();
-      } catch (e) {
-        console.error("Error closing data channel:", e);
-      }
+      dcRef.current.close();
       dcRef.current = null;
     }
 
-    // Close peer connection
     if (pcRef.current) {
-      try {
-        pcRef.current.close();
-      } catch (e) {
-        console.error("Error closing peer connection:", e);
-      }
+      pcRef.current.close();
       pcRef.current = null;
     }
 
-    // Clear audio element
     if (audioRef.current) {
       audioRef.current.srcObject = null;
     }
 
-    // Only set to "ended" if not already in error state
+    lastUserTranscriptRef.current = null;
+
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
   };
 
@@ -185,155 +140,96 @@ export function useRealtimeConversation(options: UseRealtimeConversationOptions 
       setConnectionState("connecting");
       setErrorMessage("");
 
-      // Start a new AI session in the database - MUST complete before messages arrive
-      try {
-        // Ensure Supabase is initialized
-        if (globalThis.__supabaseInitPromise) {
-          await globalThis.__supabaseInitPromise;
-        }
-        const supabase = globalThis.__supabaseClient;
-
-        if (supabase) {
-          const {
-            data: { session },
-          } = await supabase.auth.getSession();
-
-          if (session?.access_token) {
-            const response = await fetch("/api/ai-sessions/start", {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${session.access_token}`,
-                "Content-Type": "application/json",
-              },
-            });
-
-            if (!response.ok) {
-              console.error(
-                "⚠️ Failed to create AI session record - conversation won't be tracked",
-              );
-            } else {
-              const data = await response.json();
-              sessionIdRef.current = data.id;
-              console.log("✅ AI session started:", data.id);
-            }
-          } else {
-            console.warn("⚠️ No auth session - conversation won't be tracked");
-          }
-        } else {
-          console.warn(
-            "⚠️ Supabase not initialized - conversation won't be tracked",
-          );
-        }
-      } catch (error) {
-        console.error(
-          "⚠️ Error starting AI session - conversation won't be tracked:",
-          error,
-        );
-      }
-
-      // Get ephemeral token from backend with lesson parameter (use ref for latest value)
-      const currentLesson = lessonRef.current;
-      const tokenRes = await fetch(`/api/assistant/realtime-token?lesson=${currentLesson}`);
+      const tokenRes = await fetch(
+        `/api/assistant/realtime-token?lesson=${lessonRef.current}`,
+      );
       if (!tokenRes.ok) throw new Error("No se pudo obtener el token");
 
       const tokenData = await tokenRes.json();
       const { token, lesson: serverLesson } = tokenData;
-      
-      // Update confirmed lesson from server response
-      if (serverLesson) {
-        setConfirmedLesson(serverLesson);
-        console.log(`✅ AI session using Lesson ${serverLesson}`);
-      }
 
-      // Create peer connection
+      if (serverLesson) setConfirmedLesson(serverLesson);
+
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
-      // Set up audio element for receiving
       const audioEl = document.createElement("audio");
       audioEl.autoplay = true;
       audioRef.current = audioEl;
 
       pc.ontrack = (e) => {
-        if (audioEl) {
-          audioEl.srcObject = e.streams[0];
-        }
+        audioEl.srcObject = e.streams[0];
       };
 
-      // Add microphone and store the stream for cleanup
-      const ms = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 48000,
-        },
-      });
-
+      const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = ms;
       ms.getTracks().forEach((track) => pc.addTrack(track, ms));
 
-      // Create data channel
       const dc = pc.createDataChannel("oai-events");
       dcRef.current = dc;
 
       dc.addEventListener("open", () => {
         setConnectionState("active");
-        // Send initial greeting trigger
-        dc.send(
-          JSON.stringify({
-            type: "response.create",
-          }),
-        );
+        dc.send(JSON.stringify({ type: "response.create" }));
       });
 
-      // Listen for conversation events
       dc.addEventListener("message", (event) => {
         try {
           const data = JSON.parse(event.data);
 
-          // Handle transcript events
+          // 🎤 Usuario habla → Whisper (guardamos pero NO mostramos)
           if (
             data.type ===
             "conversation.item.input_audio_transcription.completed"
           ) {
-            const userMessage = data.transcript || "";
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: data.item_id || `user-${Date.now()}`,
-                role: "user",
-                text: userMessage,
-                timestamp: Date.now(),
-              },
-            ]);
-            // Save to backend
-            saveMessageToBackend("user", userMessage);
-          } else if (data.type === "response.audio_transcript.done") {
-            const assistantMessage = data.transcript || "";
+            const text = data.transcript?.trim();
+            if (text) {
+              lastUserTranscriptRef.current = text;
+            }
+          }
+
+          // 🤖 Respuesta final del asistente
+          if (data.type === "response.audio_transcript.done") {
+            const assistantText = data.transcript?.trim();
+            if (!assistantText) return;
+
+            const userText = lastUserTranscriptRef.current;
+
+            // 👉 ahora sí mostramos el mensaje del usuario (confirmado)
+            if (userText) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `user-${Date.now()}`,
+                  role: "user",
+                  text: userText,
+                  timestamp: Date.now(),
+                },
+              ]);
+              saveMessageToBackend("user", userText);
+              lastUserTranscriptRef.current = null;
+            }
+
+            // 👉 mostramos la respuesta del asistente
             setMessages((prev) => [
               ...prev,
               {
                 id: data.response_id || `assistant-${Date.now()}`,
                 role: "assistant",
-                text: assistantMessage,
+                text: assistantText,
                 timestamp: Date.now(),
               },
             ]);
-            // Save to backend
-            saveMessageToBackend("assistant", assistantMessage);
+            saveMessageToBackend("assistant", assistantText);
           }
         } catch (e) {
-          console.error("Error parsing data channel message:", e);
+          console.error("Error parsing realtime event:", e);
         }
       });
 
-      // Create and set local offer
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Send offer to OpenAI and get answer
       const sdpRes = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
         {
@@ -347,20 +243,11 @@ export function useRealtimeConversation(options: UseRealtimeConversationOptions 
         },
       );
 
-      if (!sdpRes.ok) throw new Error("Error al conectar con OpenAI");
-
-      const answerSdp = await sdpRes.text();
-      await pc.setRemoteDescription({
-        type: "answer",
-        sdp: answerSdp,
-      });
+      const answer = await sdpRes.text();
+      await pc.setRemoteDescription({ type: "answer", sdp: answer });
     } catch (error) {
-      console.error("Error starting conversation:", error);
-      setErrorMessage(
-        error instanceof Error
-          ? error.message
-          : "Error al iniciar la conversación",
-      );
+      console.error(error);
+      setErrorMessage("Error al iniciar la conversación");
       setConnectionState("error");
       stopConversation();
     }

@@ -54,3 +54,64 @@ assistantRouter.get("/realtime-token", async (req, res) => {
     });
   }
 });
+
+interface TextChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+assistantRouter.post("/text-chat", async (req, res) => {
+  try {
+    const { message, lesson, history } = req.body;
+    
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "Message is required" });
+    }
+    
+    let lessonNumber = 1;
+    if (lesson) {
+      const parsed = parseInt(lesson, 10);
+      if (!isNaN(parsed) && validateLesson(parsed)) {
+        lessonNumber = parsed;
+      }
+    }
+    
+    const systemPrompt = getSystemPrompt(lessonNumber);
+    
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+      { role: "system", content: systemPrompt },
+    ];
+    
+    if (history && Array.isArray(history)) {
+      for (const msg of history as TextChatMessage[]) {
+        if (msg.role === "user" || msg.role === "assistant") {
+          messages.push({ role: msg.role, content: msg.content });
+        }
+      }
+    }
+    
+    messages.push({ role: "user", content: message });
+    
+    console.log(`Text chat for Lesson ${lessonNumber}: "${message.substring(0, 50)}..."`);
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: messages,
+      max_tokens: 500,
+      temperature: 0.7,
+    });
+    
+    const assistantMessage = response.choices[0]?.message?.content || "Lo siento, no pude generar una respuesta.";
+    
+    res.json({
+      response: assistantMessage,
+      lesson: lessonNumber,
+    });
+  } catch (error: any) {
+    console.error("Error in text chat:", error);
+    res.status(500).json({
+      error: "Failed to get response",
+      message: error.message,
+    });
+  }
+});

@@ -15,6 +15,7 @@ import TopicDetail from "@/pages/TopicDetail";
 import TopicFlashcards from "@/pages/TopicFlashcards";
 import AIChatActivity from "@/pages/AIChatActivity";
 import ChatPartner from "@/pages/ChatPartner";
+import TextChatPartner from "@/pages/TextChatPartner";
 import TopicRedirect from "@/pages/TopicRedirect";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
@@ -80,6 +81,11 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/admin" component={Admin} />
+      <Route path="/text-chat">
+        <ProtectedRoute>
+          <TextChatPartner />
+        </ProtectedRoute>
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
