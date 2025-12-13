@@ -31,6 +31,7 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **Smart Resume & Back Navigation**: Intelligent navigation for new and returning users, resuming learning at the precise next activity.
 - **Simplified Progressive Learning Flow**: Streamlined UI with a clear progression (Video → Flashcards → AI Chat → Next Topic Video).
 - **AI Voice Conversation Feature**: Real-time WebRTC voice practice using OpenAI Realtime API, including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Session usage time is tracked in the `ai_sessions` table (started_at, ended_at). This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
+- **AI Text Chat Feature**: Text-based alternative to voice chat using OpenAI Chat Completions API (gpt-4o). Uses the exact same lesson-based prompt system as voice chat. Available at `/text-chat` route. Useful for testing without audio or in public places.
 - **Lesson-Based Prompt System**: Modular prompt architecture in `server/prompts/` with:
   - `basePrompt.ts`: Shared tutor personality, conversation flow (5 states), correction style, and strict lesson boundaries
   - `lessonPrompts.ts`: 10 lesson-specific prompts with vocabulary, structures, practice questions, and restrictions
