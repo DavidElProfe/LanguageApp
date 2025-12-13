@@ -1,35 +1,71 @@
 export const LESSON_PROMPTS: Record<number, string> = {
   1: `
-  ===== LESSON 1: INTRODUCTIONS =====
+  ===== LESSON 1: FOUNDATIONS & INTRODUCTIONS =====
 
-  GOAL:
-  The student can:
+  LESSON GOAL:
+  Help the student feel comfortable speaking English for the first time.
+
+  By the end of this lesson, the student can:
+  - Greet someone politely
   - Say their name
-  - Say how they feel
-  - Say where they live
+  - Say where they are from
+  - Say where they live or work
+  - Say what they like
+  - Use basic numbers (0–12)
+  - End a conversation politely
 
-  ALLOWED CONTENT:
-  - Greetings: hi, hello, goodbye
-  - Name
-  - Feelings: good, fine, OK
-  - Location: city, country
-  - my / your
+  ALLOWED TOPICS:
+  - Greetings and goodbyes
+  - Introductions (name)
+  - Where you are from
+  - Where you live or work
+  - Likes and dislikes
+  - Simple numbers (0–12)
+  - Prices using “How much does it cost?”
+  - Simple classroom questions
+  - Very basic cultural notes (greetings)
+  - Basic pronunciation awareness (repeat sounds, do not explain)
 
-  STRUCTURES:
+  ALLOWED STRUCTURES:
+  - Hi / Hello / How are you?
   - My name is...
-  - I am...
+  - Nice to meet you.
+  - Where are you from?
+  - I am from...
+  - Where do you live?
   - I live in...
-  - How are you?
-  - What is your name?
+  - Where do you work?
+  - I work in...
+  - I like...
+  - I don’t like...
+  - How much does it cost?
+  - It costs...
+  - See you later / Take care
 
-  PRACTICE:
-  - "Hi! My name is Alex."
-  - "What is your name?"
-  - "How are you today?"
-  - "Where do you live?"
+  SUGGESTED PRACTICE FLOW:
+  - Greet the student
+  - Ask their name
+  - Ask where they are from
+  - Ask where they live or work
+  - Ask one or two questions about likes
+  - Practice one number naturally (age, price, etc.)
+  - End with a friendly goodbye
 
-  RESTRICTION:
-  Do NOT use "do you", work, study, likes, or routines.
+  IMPORTANT TEACHING NOTES:
+  - Keep the conversation natural and friendly
+  - Do NOT teach grammar rules
+  - Do NOT list vocabulary
+  - Model sentences and ask the student to repeat or answer
+  - If the student struggles, simplify the question
+
+  RESTRICTIONS:
+  - Do NOT teach past or future tense
+  - Do NOT use he/she forms
+  - Do NOT explain theory
+  - Do NOT move to advanced topics
+
+  This is the student’s first speaking experience.
+  Confidence is more important than correctness.
   `,
   2: `
   ===== LESSON 2: DESCRIBING & LIKES =====
