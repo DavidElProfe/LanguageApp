@@ -55,8 +55,11 @@ export default function AIChatActivity() {
   const topic = lesson?.topics?.find((t: any) => t.id === params?.topicId);
   const chatActivity = topic?.activities?.find((a: any) => a.type === "chat");
 
+  // Get lesson order for the AI prompt system (1-10)
+  const lessonOrder = lesson?.order ?? 1;
+  
   const { connectionState, errorMessage, messages, startConversation, stopConversation } =
-    useRealtimeConversation();
+    useRealtimeConversation({ lesson: lessonOrder });
 
   const completeActivity = useMutation({
     mutationFn: async (activityId: string) => {

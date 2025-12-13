@@ -30,7 +30,13 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **Direct-to-Video Registration Flow**: New users are directed to the first video lesson immediately after registration.
 - **Smart Resume & Back Navigation**: Intelligent navigation for new and returning users, resuming learning at the precise next activity.
 - **Simplified Progressive Learning Flow**: Streamlined UI with a clear progression (Video → Flashcards → AI Chat → Next Topic Video).
-- **AI Voice Conversation Feature**: Real-time WebRTC voice practice using custom OpenAI Assistant (asst_uoHk8D6G4ZPtYrb6lwueR0uh), including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Defaults to Level 1 (beginner) conversations. Session usage time is tracked in the `ai_sessions` table (started_at, ended_at). This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
+- **AI Voice Conversation Feature**: Real-time WebRTC voice practice using OpenAI Realtime API, including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Session usage time is tracked in the `ai_sessions` table (started_at, ended_at). This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
+- **Lesson-Based Prompt System**: Modular prompt architecture in `server/prompts/` with:
+  - `basePrompt.ts`: Shared tutor personality, conversation flow (5 states), correction style, and strict lesson boundaries
+  - `lessonPrompts.ts`: 10 lesson-specific prompts with vocabulary, structures, practice questions, and restrictions
+  - `promptManager.ts`: Composes final prompt from BASE_PROMPT + LESSON_PROMPT[currentLesson]
+  - Endpoint accepts `?lesson=N` parameter (1-10), defaults to lesson 1
+  - AI strictly enforces lesson boundaries - no teaching ahead or outside current lesson scope
 - **Authentication-Gated Content**: All course content requires account creation, with unauthenticated users redirected to `/auth`.
 - **Step-by-Step Visual Prompts**: `ActivitySteps` component shows clear progression through each topic with visual indicators.
 - **Progress Bar & Next Topic Navigation**: Real-time progress bar and "Continuar" button to guide users through topics and lessons.

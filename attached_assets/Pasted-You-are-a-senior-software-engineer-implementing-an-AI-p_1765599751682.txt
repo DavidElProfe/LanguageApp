@@ -1,0 +1,87 @@
+You are a senior software engineer implementing an AI-powered English tutor.
+
+GOAL
+Implement a lesson-based prompt system where the AI tutor ONLY teaches the content of the current lesson.
+The AI must NOT have access to future lessons’ content.
+
+PROBLEM TO SOLVE
+A single monolithic prompt fails due to excessive content (200+ pages).
+We must split the AI behavior into lesson-specific prompts and dynamically assign them based on student progress.
+
+ARCHITECTURE REQUIREMENTS
+
+1. STUDENT STATE
+Create a persistent student state with at least:
+- currentLesson (number)
+- progress (optional)
+
+The AI must NEVER decide the lesson.
+Lesson progression is controlled by the application logic.
+
+2. PROMPT STRUCTURE
+Implement a two-layer prompt system:
+
+A. BASE PROMPT (shared by all lessons)
+- Defines tutor personality and global rules
+- Simple English
+- Patient, encouraging
+- Never jumps ahead
+- If asked about future content, politely defers
+
+B. LESSON PROMPT (one per lesson)
+- Strictly defines:
+  - Allowed content
+  - Forbidden content
+  - Teaching goal
+  - Teaching style
+
+The final system prompt MUST be:
+BASE_PROMPT + LESSON_PROMPT[currentLesson]
+
+3. PROMPT STORAGE
+Store lesson prompts in a scalable structure, for example:
+- One file per lesson
+  /prompts/lesson1.ts
+  /prompts/lesson2.ts
+- OR a dictionary/object keyed by lesson number
+
+Prompts must be easy to edit and extend.
+
+4. RUNTIME BEHAVIOR
+At request time:
+- Read student.currentLesson
+- Load the corresponding lesson prompt
+- Compose system prompt dynamically
+- Send ONLY that prompt to the LLM
+
+5. STRICT BEHAVIOR RULES FOR THE AI
+The lesson prompt must enforce that:
+- The AI cannot teach grammar or vocabulary outside the current lesson
+- The AI cannot preview or summarize future lessons
+- The AI cannot answer advanced questions
+- The AI redirects out-of-scope questions back to current lesson topics
+
+6. LESSON TRANSITION
+Lesson changes are triggered ONLY by backend/app logic (not AI):
+- Exercise completion
+- Manual “Next lesson” action
+- Progress validation
+
+When currentLesson changes, the assigned prompt changes automatically.
+
+7. CODE QUALITY
+- Clean, modular, readable
+- No hardcoded prompts inside business logic
+- Prompt composition isolated in a dedicated service/module
+- Easily testable
+
+DELIVERABLES
+- Prompt manager module/service
+- Base prompt definition
+- Example lesson prompt implementation (at least 1 lesson)
+- Integration point where the lesson-based prompt is injected into the AI call
+
+IMPORTANT
+This is not a chat toy.
+This is an educational system with strict pedagogical boundaries.
+Implement accordingly.

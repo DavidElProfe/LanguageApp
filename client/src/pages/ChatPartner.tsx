@@ -1,15 +1,38 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MessageSquare, ArrowLeft, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
 import { useRealtimeConversation } from "@/hooks/useRealtimeConversation";
 import ConversationTranscript from "@/components/ConversationTranscript";
 
+const LESSON_OPTIONS = [
+  { value: 1, label: "Lección 1: Presentaciones y conversación básica" },
+  { value: 2, label: "Lección 2: Describir cosas y preferencias" },
+  { value: 3, label: "Lección 3: Comida, compras y números" },
+  { value: 4, label: "Lección 4: Actividades diarias (yo/tú)" },
+  { value: 5, label: "Lección 5: Presente simple (él/ella)" },
+  { value: 6, label: "Lección 6: Restaurantes" },
+  { value: 7, label: "Lección 7: Hoteles y viajes" },
+  { value: 8, label: "Lección 8: Preferencias y estilo de vida" },
+  { value: 9, label: "Lección 9: Rutinas y orden temporal" },
+  { value: 10, label: "Lección 10: Verbos comunes y repaso" },
+];
+
 export default function ChatPartner() {
   const [, setLocation] = useLocation();
-  const { connectionState, errorMessage, messages, startConversation, stopConversation } =
-    useRealtimeConversation();
+  const [selectedLesson, setSelectedLesson] = useState(1);
+  
+  const { connectionState, errorMessage, messages, currentLesson, startConversation, stopConversation } =
+    useRealtimeConversation({ lesson: selectedLesson });
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -40,14 +63,37 @@ export default function ChatPartner() {
               <div className="text-muted-foreground">
                 <p className="mb-4">
                   Practica tus habilidades conversacionales con nuestro asistente de IA.
-                  Puedes hablar sobre cualquier tema en el idioma que estás aprendiendo.
+                  El tutor se enfocará en el vocabulario y estructuras de la lección seleccionada.
                 </p>
                 <ul className="list-disc list-inside space-y-2 text-sm">
                   <li>Habla naturalmente con el asistente</li>
                   <li>Recibe retroalimentación en tiempo real</li>
                   <li>Practica pronunciación y fluidez</li>
-                  <li>Conversación privada y segura</li>
+                  <li>Contenido adaptado a tu nivel</li>
                 </ul>
+              </div>
+
+              {/* Lesson Selector */}
+              <div className="space-y-2">
+                <label htmlFor="lesson-select" className="text-sm font-medium">
+                  Selecciona la lección que quieres practicar:
+                </label>
+                <Select
+                  value={selectedLesson.toString()}
+                  onValueChange={(value) => setSelectedLesson(parseInt(value, 10))}
+                  disabled={connectionState !== "idle" && connectionState !== "ended" && connectionState !== "error"}
+                >
+                  <SelectTrigger id="lesson-select" data-testid="select-lesson">
+                    <SelectValue placeholder="Selecciona una lección" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LESSON_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value.toString()}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               {errorMessage && (
@@ -93,8 +139,11 @@ export default function ChatPartner() {
                       <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
                       <span className="font-semibold text-lg">Conversación activa</span>
                     </div>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-muted-foreground mb-2">
                       Habla con claridad cerca del micrófono
+                    </p>
+                    <p className="text-xs text-primary font-medium" data-testid="text-active-lesson">
+                      Practicando: {LESSON_OPTIONS.find(o => o.value === currentLesson)?.label || `Lección ${currentLesson}`}
                     </p>
                   </div>
 

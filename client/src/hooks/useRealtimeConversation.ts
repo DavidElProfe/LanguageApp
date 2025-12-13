@@ -9,25 +9,43 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
+interface UseRealtimeConversationOptions {
+  lesson?: number;
+}
+
 interface UseRealtimeConversationReturn {
   connectionState: ConnectionState;
   errorMessage: string;
   messages: ConversationMessage[];
+  currentLesson: number;
   startConversation: () => Promise<void>;
   stopConversation: () => Promise<void>;
 }
 
-export function useRealtimeConversation(): UseRealtimeConversationReturn {
+export function useRealtimeConversation(options: UseRealtimeConversationOptions = {}): UseRealtimeConversationReturn {
+  const { lesson = 1 } = options;
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [confirmedLesson, setConfirmedLesson] = useState<number>(lesson);
+  
+  // Use ref to always have the latest lesson value for startConversation
+  const lessonRef = useRef<number>(lesson);
+  lessonRef.current = lesson;
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  
+  // Sync confirmedLesson when lesson prop changes (only when not in active session)
+  useEffect(() => {
+    if (connectionState === "idle" || connectionState === "ended" || connectionState === "error") {
+      setConfirmedLesson(lesson);
+    }
+  }, [lesson, connectionState]);
 
   // Initialize Supabase on mount to ensure auth is available
   useEffect(() => {
@@ -213,11 +231,19 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
         );
       }
 
-      // Get ephemeral token from backend
-      const tokenRes = await fetch("/api/assistant/realtime-token");
+      // Get ephemeral token from backend with lesson parameter (use ref for latest value)
+      const currentLesson = lessonRef.current;
+      const tokenRes = await fetch(`/api/assistant/realtime-token?lesson=${currentLesson}`);
       if (!tokenRes.ok) throw new Error("No se pudo obtener el token");
 
-      const { token } = await tokenRes.json();
+      const tokenData = await tokenRes.json();
+      const { token, lesson: serverLesson } = tokenData;
+      
+      // Update confirmed lesson from server response
+      if (serverLesson) {
+        setConfirmedLesson(serverLesson);
+        console.log(`✅ AI session using Lesson ${serverLesson}`);
+      }
 
       // Create peer connection
       const pc = new RTCPeerConnection();
@@ -344,6 +370,7 @@ export function useRealtimeConversation(): UseRealtimeConversationReturn {
     connectionState,
     errorMessage,
     messages,
+    currentLesson: confirmedLesson,
     startConversation,
     stopConversation,
   };
