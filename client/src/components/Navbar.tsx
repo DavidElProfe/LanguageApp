@@ -20,7 +20,8 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { path: '/', label: 'Chat IA' },
+    { path: '/', label: 'Chat Voz' },
+    { path: '/text-chat', label: 'Chat Texto' },
     { path: '/courses', label: 'Cursos' },
     ...(user ? [{ path: '/dashboard', label: t('nav.dashboard') }] : []),
   ];
