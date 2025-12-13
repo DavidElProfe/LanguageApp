@@ -1,5 +1,4 @@
 import { useRef, useEffect } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ConversationMessage } from "@/hooks/useRealtimeConversation";
 
 interface ConversationTranscriptProps {
@@ -8,12 +7,12 @@ interface ConversationTranscriptProps {
 }
 
 export default function ConversationTranscript({ messages, connectionState }: ConversationTranscriptProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages]);
 
@@ -26,8 +25,8 @@ export default function ConversationTranscript({ messages, connectionState }: Co
       <div className="bg-muted px-4 py-2 border-b">
         <h3 className="font-semibold text-sm">Conversación en vivo</h3>
       </div>
-      <ScrollArea className="h-[400px]" data-testid="scroll-conversation">
-        <div ref={scrollRef} className="p-4 space-y-4">
+      <div className="h-[400px] overflow-y-auto" data-testid="scroll-conversation">
+        <div className="p-4 space-y-4">
           {messages.length === 0 && connectionState === "connecting" && (
             <div className="text-center text-muted-foreground text-sm py-8">
               Conectando...
@@ -71,8 +70,9 @@ export default function ConversationTranscript({ messages, connectionState }: Co
               Conversación terminada
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }

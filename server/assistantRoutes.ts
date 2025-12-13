@@ -179,6 +179,7 @@ STATE 5 WRAP_UP: ~2 min
       },
       input_audio_transcription: {
         model: "whisper-1",
+        language: "en",
       },
     });
 
