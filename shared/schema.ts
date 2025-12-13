@@ -1,5 +1,15 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, uuid, boolean, unique } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  varchar,
+  timestamp,
+  integer,
+  jsonb,
+  uuid,
+  boolean,
+  unique,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -25,7 +35,9 @@ export const courses = pgTable("courses", {
 // Lessons table
 export const lessons = pgTable("lessons", {
   id: uuid("id").primaryKey().defaultRandom(),
-  courseId: uuid("course_id").notNull().references(() => courses.id, { onDelete: "cascade" }),
+  courseId: uuid("course_id")
+    .notNull()
+    .references(() => courses.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   order: integer("order").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -34,7 +46,9 @@ export const lessons = pgTable("lessons", {
 // Topics table
 export const topics = pgTable("topics", {
   id: uuid("id").primaryKey().defaultRandom(),
-  lessonId: uuid("lesson_id").notNull().references(() => lessons.id, { onDelete: "cascade" }),
+  lessonId: uuid("lesson_id")
+    .notNull()
+    .references(() => lessons.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   summary: text("summary").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -46,21 +60,31 @@ export type ActivityType = "video" | "quizlet" | "chat";
 // Activities table
 export const activities = pgTable("activities", {
   id: uuid("id").primaryKey().defaultRandom(),
-  topicId: uuid("topic_id").notNull().references(() => topics.id, { onDelete: "cascade" }),
+  topicId: uuid("topic_id")
+    .notNull()
+    .references(() => topics.id, { onDelete: "cascade" }),
   type: text("type").notNull(), // "video" | "quizlet" | "chat"
   data: jsonb("data").notNull(), // { videoUrl } | { quizletId } | { assistantId }
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Activity completions table (replaces progress_events)
-export const activityCompletions = pgTable("activity_completions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
-  activityId: uuid("activity_id").notNull().references(() => activities.id, { onDelete: "cascade" }),
-  completedAt: timestamp("completed_at").defaultNow().notNull(),
-}, (table) => ({
-  uniqueUserActivity: unique().on(table.userId, table.activityId),
-}));
+export const activityCompletions = pgTable(
+  "activity_completions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => profiles.id, { onDelete: "cascade" }),
+    activityId: uuid("activity_id")
+      .notNull()
+      .references(() => activities.id, { onDelete: "cascade" }),
+    completedAt: timestamp("completed_at").defaultNow().notNull(),
+  },
+  (table) => ({
+    uniqueUserActivity: unique().on(table.userId, table.activityId),
+  }),
+);
 
 // Waitlist emails table
 export const waitlistEmails = pgTable("waitlist_emails", {
@@ -72,7 +96,9 @@ export const waitlistEmails = pgTable("waitlist_emails", {
 // AI Sessions table - tracks AI conversation usage
 export const aiSessions = pgTable("ai_sessions", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   endedAt: timestamp("ended_at"),
   state: text("state").default("INTRO").notNull(), // <-- this atribute
@@ -81,7 +107,9 @@ export const aiSessions = pgTable("ai_sessions", {
 // AI Session Messages table - stores conversation transcript
 export const aiSessionMessages = pgTable("ai_session_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
-  sessionId: uuid("session_id").notNull().references(() => aiSessions.id, { onDelete: "cascade" }),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => aiSessions.id, { onDelete: "cascade" }),
   role: text("role").notNull(), // "user" | "assistant"
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -113,12 +141,16 @@ export const insertActivitySchema = createInsertSchema(activities).omit({
   createdAt: true,
 });
 
-export const insertActivityCompletionSchema = createInsertSchema(activityCompletions).omit({
+export const insertActivityCompletionSchema = createInsertSchema(
+  activityCompletions,
+).omit({
   id: true,
   completedAt: true,
 });
 
-export const insertWaitlistEmailSchema = createInsertSchema(waitlistEmails).omit({
+export const insertWaitlistEmailSchema = createInsertSchema(
+  waitlistEmails,
+).omit({
   id: true,
   createdAt: true,
 });
@@ -128,7 +160,9 @@ export const insertAiSessionSchema = createInsertSchema(aiSessions).omit({
   startedAt: true,
 });
 
-export const insertAiSessionMessageSchema = createInsertSchema(aiSessionMessages).omit({
+export const insertAiSessionMessageSchema = createInsertSchema(
+  aiSessionMessages,
+).omit({
   id: true,
   createdAt: true,
 });
@@ -149,7 +183,9 @@ export type Topic = typeof topics.$inferSelect;
 export type InsertActivity = z.infer<typeof insertActivitySchema>;
 export type Activity = typeof activities.$inferSelect;
 
-export type InsertActivityCompletion = z.infer<typeof insertActivityCompletionSchema>;
+export type InsertActivityCompletion = z.infer<
+  typeof insertActivityCompletionSchema
+>;
 export type ActivityCompletion = typeof activityCompletions.$inferSelect;
 
 export type InsertWaitlistEmail = z.infer<typeof insertWaitlistEmailSchema>;
@@ -158,5 +194,7 @@ export type WaitlistEmail = typeof waitlistEmails.$inferSelect;
 export type InsertAiSession = z.infer<typeof insertAiSessionSchema>;
 export type AiSession = typeof aiSessions.$inferSelect;
 
-export type InsertAiSessionMessage = z.infer<typeof insertAiSessionMessageSchema>;
+export type InsertAiSessionMessage = z.infer<
+  typeof insertAiSessionMessageSchema
+>;
 export type AiSessionMessage = typeof aiSessionMessages.$inferSelect;
