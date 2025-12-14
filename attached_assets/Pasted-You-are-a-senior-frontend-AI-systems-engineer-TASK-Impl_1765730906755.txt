@@ -1,0 +1,67 @@
+You are a senior frontend + AI systems engineer.
+
+TASK
+Implement an optional UI change to reduce user-facing issues caused by real-time voice transcription, while keeping the underlying AI behavior unchanged.
+
+IMPORTANT
+This change must be:
+- Reversible
+- Non-destructive
+- Isolated to the UI layer
+- Easy to disable or revert if needed
+
+CONTEXT
+This app is a voice-based English tutor.
+The primary learning interaction is speaking and listening.
+
+Current issue:
+- Real-time speech-to-text transcription is shown in the chat UI.
+- Transcription errors (from ASR) create confusion for users.
+- These errors do not reflect actual AI understanding but degrade UX.
+
+GOAL
+Make the default user experience voice-first, without showing live transcription or chat messages.
+Keep text chat available ONLY as an optional debug/testing mode.
+
+REQUIREMENTS
+
+1. DEFAULT MODE (Voice-only)
+- When a conversation starts:
+  - Do NOT display real-time transcribed user messages.
+  - Do NOT display assistant text messages by default.
+  - Show a simple UI indicator such as:
+    “You are talking with the tutor”
+- Voice interaction must continue working exactly as before.
+
+2. OPTIONAL DEBUG / TEXT MODE
+- Add a toggle or button (e.g. “Show text chat (debug)”).
+- When enabled:
+  - Display the existing chat UI with messages and transcriptions.
+  - Allow text-based interaction for testing purposes.
+- When disabled:
+  - Hide all chat/transcription UI elements.
+
+3. SCOPE LIMITS
+- Do NOT change:
+  - AI prompts
+  - Lesson logic
+  - Voice pipeline
+  - Session handling
+- This is a UI/UX-only change.
+
+4. REVERSIBILITY
+- Implement this as a feature flag, toggle, or clearly isolated component.
+- It should be trivial to revert to “always show chat” if needed.
+
+OUTPUT
+- Updated UI with voice-only default mode.
+- Optional debug/text chat toggle.
+- Minimal code comments explaining intent.
+
+DO NOT:
+- Refactor unrelated code
+- Optimize prompts
+- Modify AI behavior
+- Introduce new dependencies
+
+Focus only on improving UX by hiding real-time transcription by default.
