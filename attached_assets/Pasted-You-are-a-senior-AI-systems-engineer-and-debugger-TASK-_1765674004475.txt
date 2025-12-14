@@ -1,0 +1,68 @@
+You are a senior AI systems engineer and debugger.
+
+TASK
+Audit this codebase to identify why an AI model is ignoring strict prompt constraints.
+
+CONTEXT
+This project uses an LLM as a real-time English tutor with:
+- A BASE PROMPT (system) that defines strict conversational rules.
+- A LESSON PROMPT (system or context) that defines allowed topics and structures.
+Despite strict prompts, the model keeps:
+- Introducing new topics not in the lesson
+- Asking follow-up questions outside scope
+- Skipping mandatory correction steps
+- Behaving like free conversation instead of guided mode
+
+GOAL
+Identify whether any of the following issues are happening in the code:
+
+1. Prompt Injection Hierarchy Issues
+- Check if the BASE PROMPT is actually sent as role="system".
+- Check if the LESSON PROMPT is also sent as role="system".
+- Verify the exact ORDER of messages sent to the model.
+- Confirm no other system prompt (default, library, SDK, wrapper) is overriding them.
+
+2. Hidden or Conflicting Prompts
+- Search for any default prompts like:
+  "You are a helpful assistant"
+  "You are ChatGPT"
+  "Be friendly and engaging"
+- Check SDKs, middleware, or realtime/voice wrappers for injected prompts.
+
+3. Context / Memory Leakage
+- Verify whether conversation history is reused between sessions.
+- Check if the model is ever reset when:
+  - starting a new session
+  - switching lessons
+  - switching modes (guided vs free)
+- Identify any persistent memory, cache, or history replay.
+
+4. Role Misuse
+- Check if LESSON prompts are mistakenly sent as:
+  - role="assistant"
+  - role="user"
+- Confirm they are never appended mid-conversation.
+
+5. Realtime / Voice Bias
+- If using realtime or voice APIs:
+  - Check if there are engagement-boosting defaults
+  - Check if the model is forced into a conversational mode
+  - Identify any parameters that prioritize engagement over instruction-following
+
+6. Code-Level Overrides
+- Search for temperature, presence_penalty, or other params that encourage creativity.
+- Check if any retry logic or fallback logic alters prompts.
+
+OUTPUT REQUIRED
+Return a clear diagnostic report with:
+- ✅ Confirmed safe areas
+- ❌ Violations found (with file names and line numbers)
+- ⚠️ High-risk patterns
+- 🔧 Exact code changes needed to enforce strict prompt authority
+
+DO NOT:
+- Rewrite prompts
+- Suggest pedagogical changes
+- Give generic advice
+
+Focus ONLY on architectural and code-level causes.
