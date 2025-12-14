@@ -98,7 +98,7 @@ assistantRouter.post("/text-chat", async (req, res) => {
       model: "gpt-4o",
       messages: messages,
       max_tokens: 500,
-      temperature: 0.7,
+      temperature: 0.3,
     });
     
     const assistantMessage = response.choices[0]?.message?.content || "Lo siento, no pude generar una respuesta.";
