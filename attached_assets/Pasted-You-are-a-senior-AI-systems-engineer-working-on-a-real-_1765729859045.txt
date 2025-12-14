@@ -1,0 +1,69 @@
+You are a senior AI systems engineer working on a real-time voice-based English tutor.
+
+TASK
+Implement safeguards to prevent the AI model from inferring meaning when speech-to-text transcription is incorrect.
+
+CONTEXT
+This app uses:
+- OpenAI Realtime API with gpt-4o-realtime-preview-2024-12-17
+- Whisper ASR for voice transcription
+- A strict BASE_PROMPT + LESSON_PROMPT system
+- Guided lesson mode with tight content boundaries
+
+CURRENT PROBLEM
+When using voice input:
+- Whisper sometimes outputs valid English words that are semantically incorrect (e.g. “Electrolytes”, “Swooshy”).
+- The model assumes those words are intentional.
+- This causes the lesson flow to break.
+
+GOAL
+Ensure that unclear or suspicious voice transcriptions:
+- Do NOT get interpreted or inferred by the model
+- Trigger a clarification request instead
+- Preserve lesson boundaries and correction rules
+
+IMPLEMENTATION REQUIREMENTS
+
+1. BASE PROMPT UPDATE (ASR AWARENESS)
+Extend the BASE_PROMPT to explicitly inform the model that:
+- Input comes from speech-to-text
+- Transcription errors are possible
+- Single words or out-of-context phrases should be treated as unclear input
+
+Add a new section (do not remove existing rules) that instructs:
+- If the input is a single word, unnatural, or does not match lesson sentence patterns:
+  - Do NOT guess meaning
+  - Respond with: “I didn’t understand. Can you say it again?”
+  - Wait for the user
+
+2. FRONTEND / CLIENT-SIDE FILTER (VOICE ONLY)
+Before sending transcribed voice input to the backend:
+- Add a lightweight validation step to detect likely ASR errors
+- Examples of suspicious input:
+  - Single-word input
+  - Very short input
+  - Input that does not resemble a sentence
+
+If input is flagged as suspicious:
+- Do NOT send it to the model
+- Instead, inject a clarification turn equivalent to:
+  “I didn’t understand. Can you say it again?”
+
+3. SCOPE CONTROL
+- Do NOT change lesson prompts
+- Do NOT relax lesson constraints
+- Do NOT add new conversational freedom
+- Apply this only to voice input, not text input
+
+OUTPUT
+- Updated BASE_PROMPT with ASR awareness
+- Added frontend/client-side guard for voice transcription
+- Clear comments explaining why the guard exists
+
+Do NOT:
+- Change the model
+- Change session handling
+- Add memory or history
+- Propose future improvements
+
+Focus only on preventing ASR-driven inference errors.
