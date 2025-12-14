@@ -1,0 +1,68 @@
+You are a senior full-stack engineer working inside this Replit project.
+
+GOAL
+Implement a safe “Session Recap” trigger for the VOICE (Realtime/WebRTC) flow, without changing or degrading the existing, carefully tuned BASE_PROMPT and LESSON_PROMPTS behavior during the conversation.
+
+CRITICAL RULES
+- Be extremely conservative. Make the smallest possible code changes.
+- Do NOT rewrite BASE_PROMPT or LESSON_PROMPTS (assume they are already polished).
+- Do NOT loosen lesson boundaries.
+- Do NOT change turn detection or VAD settings unless strictly necessary.
+- Do NOT add new features unrelated to recap.
+- Do NOT remove existing logging/analytics.
+- Preserve current user experience during the live conversation.
+
+CONTEXT
+- Voice uses OpenAI Realtime sessions (gpt-4o-realtime-preview-2024-12-17) created in server/assistantRoutes.ts with `instructions: getSystemPrompt(lessonNumber)`.
+- The recap instructions exist in BASE_PROMPT as “SESSION RECAP MODE (VOICE ONLY)”.
+- Problem: Saying “See you later” does not reliably trigger recap because Realtime does not have an external “end session” signal reaching the model. We need an explicit system trigger.
+
+REQUIREMENT
+Add an explicit “END_SESSION_RECAP” trigger that the system can send to the Realtime session, so the model enters recap mode and speaks ONCE, then the app ends the session.
+
+DESIRED UX
+- During the session: unchanged behavior.
+- When the student wants to end:
+  Option 1 (preferred): a “Finish” button in the UI that triggers recap.
+  Option 2 (optional): if the user says “See you later” or “Goodbye”, detect it on the client transcript and trigger recap (only if detection is confident; do NOT trigger on partial matches).
+- After recap is spoken: automatically stopConversation() / close the session cleanly.
+
+IMPLEMENTATION TASKS (MINIMAL CHANGES)
+1) Identify the correct way to send a system message/event into an ACTIVE Realtime session over the existing RTCDataChannel (dcRef) in client/src/hooks/useRealtimeConversation.ts.
+   - Find where outgoing events are sent (or add a small helper).
+   - The message must be a “system” instruction/event that the Realtime model will process before generating the recap.
+2) Add a single function exposed by the hook: `requestSessionRecap(): void` (or similar).
+   - This function sends the trigger text: “END_SESSION_RECAP”.
+   - It should also set a local flag (e.g., `isRecapRequestedRef`) to prevent any additional normal conversation sends.
+3) Add minimal UI support:
+   - Add a small “Finish” button near the voice controls that calls `requestSessionRecap()`.
+   - Disable the button if not connected.
+4) Ensure the model receives the trigger as a system-level message:
+   - The trigger must be unambiguous and short. Exactly: END_SESSION_RECAP
+   - Do NOT include extra explanation in that message.
+5) Ensure the model speaks the recap once:
+   - Add a client-side guard: once recap is requested, ignore further user mic input and do not send more user turns.
+   - Wait for the assistant’s next completed response/audio, then auto-stop the session.
+6) Logging / Safety:
+   - Add small logs: “Recap requested” and “Recap completed”.
+   - Make no changes to DB schema.
+   - Do not change lesson selection logic.
+
+ACCEPTANCE CRITERIA
+- Starting a voice session behaves exactly as before.
+- The new “Finish” button triggers a recap reliably.
+- Recap is generated once, spoken once, and the session ends automatically after recap completes.
+- No new lesson drift is introduced.
+- No changes are made to the text chat flow unless necessary.
+
+DELIVERABLE
+- List the exact files you changed and why.
+- Provide the final code diff (or the updated code blocks) for each changed file.
+- Include a short step-by-step manual test plan:
+  1) Start Lesson 1, say a few lines, press Finish, confirm recap, confirm session ends.
+  2) Start Lesson 2, same test, confirm recap references Lesson 2 content only.
+  3) Try pressing Finish twice, ensure no duplicate recap.
+  4) Confirm normal conversation is unchanged if Finish is never pressed.
+
+START NOW
+First, locate the Realtime datachannel send/receive code in useRealtimeConversation.ts and determine the exact event format currently used. Then implement the smallest possible “END_SESSION_RECAP” system trigger using that same pattern.
