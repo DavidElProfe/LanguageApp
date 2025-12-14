@@ -20,6 +20,7 @@ interface UseRealtimeConversationReturn {
   currentLesson: number;
   startConversation: () => Promise<void>;
   stopConversation: () => Promise<void>;
+  requestSessionRecap: () => void;
 }
 
 export function useRealtimeConversation(
@@ -44,6 +45,10 @@ export function useRealtimeConversation(
 
   // 👉 guarda la última frase del usuario (NO renderiza)
   const lastUserTranscriptRef = useRef<string | null>(null);
+  
+  // 👉 recap flow control
+  const isRecapRequestedRef = useRef<boolean>(false);
+  const recapResponseSeenRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (
@@ -131,8 +136,39 @@ export function useRealtimeConversation(
     }
 
     lastUserTranscriptRef.current = null;
+    isRecapRequestedRef.current = false;
+    recapResponseSeenRef.current = false;
 
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
+  };
+
+  const requestSessionRecap = () => {
+    if (!dcRef.current || dcRef.current.readyState !== "open") {
+      console.warn("⚠️ DataChannel not open, cannot request recap");
+      return;
+    }
+
+    isRecapRequestedRef.current = true;
+    recapResponseSeenRef.current = false;
+
+    // Send system trigger to model
+    try {
+      dcRef.current.send(
+        JSON.stringify({
+          type: "conversation.item.create",
+          item: {
+            type: "message",
+            role: "user",
+            content: "END_SESSION_RECAP",
+          },
+        })
+      );
+      dcRef.current.send(JSON.stringify({ type: "response.create" }));
+      console.log("📋 Recap requested");
+    } catch (error) {
+      console.error("⚠️ Error sending recap trigger:", error);
+      isRecapRequestedRef.current = false;
+    }
   };
 
   const startConversation = async () => {
@@ -178,10 +214,14 @@ export function useRealtimeConversation(
           const data = JSON.parse(event.data);
 
           // 🎤 Usuario habla → Whisper (guardamos pero NO mostramos)
+          // 👉 Skip user input if recap is requested
           if (
             data.type ===
             "conversation.item.input_audio_transcription.completed"
           ) {
+            if (isRecapRequestedRef.current) {
+              return;
+            }
             const text = data.transcript?.trim();
             if (text) {
               lastUserTranscriptRef.current = text;
@@ -192,6 +232,27 @@ export function useRealtimeConversation(
           if (data.type === "response.audio_transcript.done") {
             const assistantText = data.transcript?.trim();
             if (!assistantText) return;
+
+            // 👉 If recap was requested, auto-stop after next response
+            if (isRecapRequestedRef.current && !recapResponseSeenRef.current) {
+              recapResponseSeenRef.current = true;
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: data.response_id || `assistant-${Date.now()}`,
+                  role: "assistant",
+                  text: assistantText,
+                  timestamp: Date.now(),
+                },
+              ]);
+              saveMessageToBackend("assistant", assistantText);
+              console.log("📋 Recap completed");
+              // Auto-stop after recap response
+              setTimeout(() => {
+                stopConversation();
+              }, 1500);
+              return;
+            }
 
             const userText = lastUserTranscriptRef.current;
 
@@ -260,5 +321,6 @@ export function useRealtimeConversation(
     currentLesson: confirmedLesson,
     startConversation,
     stopConversation,
+    requestSessionRecap,
   };
 }

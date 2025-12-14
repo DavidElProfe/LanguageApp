@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, ArrowLeft, Loader2, Eye, EyeOff, Mic } from "lucide-react";
+import { MessageSquare, ArrowLeft, Loader2, Eye, EyeOff, Mic, LogOut } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -32,8 +32,9 @@ export default function ChatPartner() {
   const [selectedLesson, setSelectedLesson] = useState(1);
   // Voice-only mode by default. Set to true to show transcription (debug mode).
   const [showDebugChat, setShowDebugChat] = useState(false);
+  const [recapRequested, setRecapRequested] = useState(false);
   
-  const { connectionState, errorMessage, messages, currentLesson, startConversation, stopConversation } =
+  const { connectionState, errorMessage, messages, currentLesson, startConversation, stopConversation, requestSessionRecap } =
     useRealtimeConversation({ lesson: selectedLesson });
 
   return (
@@ -192,15 +193,29 @@ export default function ChatPartner() {
                     </div>
                   )}
 
-                  <Button
-                    onClick={stopConversation}
-                    variant="destructive"
-                    size="lg"
-                    className="w-full"
-                    data-testid="button-end-conversation"
-                  >
-                    Terminar conversación
-                  </Button>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Button
+                      onClick={() => {
+                        setRecapRequested(true);
+                        requestSessionRecap();
+                      }}
+                      variant="outline"
+                      size="lg"
+                      disabled={recapRequested}
+                      data-testid="button-finish-recap"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Terminar
+                    </Button>
+                    <Button
+                      onClick={stopConversation}
+                      variant="destructive"
+                      size="lg"
+                      data-testid="button-end-conversation"
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
                 </div>
               )}
 
