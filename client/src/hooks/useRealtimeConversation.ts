@@ -48,7 +48,7 @@ export function useRealtimeConversation(
   
   // 👉 recap flow control
   const isRecapRequestedRef = useRef<boolean>(false);
-  const recapResponseSeenRef = useRef<boolean>(false);
+  const recapCloseScheduledRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (
@@ -137,7 +137,7 @@ export function useRealtimeConversation(
 
     lastUserTranscriptRef.current = null;
     isRecapRequestedRef.current = false;
-    recapResponseSeenRef.current = false;
+    recapCloseScheduledRef.current = false;
 
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
   };
@@ -149,7 +149,7 @@ export function useRealtimeConversation(
     }
 
     isRecapRequestedRef.current = true;
-    recapResponseSeenRef.current = false;
+    recapCloseScheduledRef.current = false;
 
     // Send system trigger to model (correct format for Realtime API)
     try {
@@ -233,23 +233,14 @@ export function useRealtimeConversation(
             }
           }
 
-          // 🎯 Recap: esperar response.done para cerrar (cuando el audio terminó)
-          if (data.type === "response.done" && isRecapRequestedRef.current && recapResponseSeenRef.current) {
-            console.log("📋 Audio del recap terminó, cerrando sesión...");
-            setTimeout(() => {
-              stopConversation();
-            }, 500);
-            return;
-          }
-
           // 🤖 Respuesta final del asistente
           if (data.type === "response.audio_transcript.done") {
             const assistantText = data.transcript?.trim();
             if (!assistantText) return;
 
-            // 👉 If recap was requested, save text but DON'T stop yet (wait for response.done)
-            if (isRecapRequestedRef.current && !recapResponseSeenRef.current) {
-              recapResponseSeenRef.current = true;
+            // 👉 If recap was requested, estimate audio duration and schedule close
+            if (isRecapRequestedRef.current && !recapCloseScheduledRef.current) {
+              recapCloseScheduledRef.current = true;
               setMessages((prev) => [
                 ...prev,
                 {
@@ -260,7 +251,16 @@ export function useRealtimeConversation(
                 },
               ]);
               saveMessageToBackend("assistant", assistantText);
-              console.log("📋 Recap texto recibido, esperando que termine el audio...");
+              
+              // Estimar duración: ~2.5 palabras/segundo = 400ms por palabra + 2s buffer
+              const wordCount = assistantText.split(/\s+/).length;
+              const estimatedMs = Math.max(wordCount * 400 + 2000, 5000);
+              console.log(`📋 Recap: ${wordCount} palabras, esperando ${estimatedMs}ms para reproducir audio...`);
+              
+              setTimeout(() => {
+                console.log("📋 Cerrando sesión después del recap");
+                stopConversation();
+              }, estimatedMs);
               return;
             }
 
