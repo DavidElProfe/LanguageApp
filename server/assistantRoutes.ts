@@ -20,15 +20,16 @@ assistantRouter.get("/realtime-token", async (req, res) => {
       }
     }
     
-    const baseInstructions = getBasePrompt();
+    const basePrompt = getBasePrompt();
     const lessonPrompt = getLessonPrompt(lessonNumber);
+    const fullInstructions = basePrompt + "\n\n" + lessonPrompt;
     
     console.log(`Creating realtime session for Lesson ${lessonNumber}`);
 
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17",
       voice: "alloy",
-      instructions: baseInstructions,
+      instructions: basePrompt,
       modalities: ["text", "audio"],
       turn_detection: {
         type: "server_vad",
@@ -45,7 +46,7 @@ assistantRouter.get("/realtime-token", async (req, res) => {
     res.json({
       token: response.client_secret.value,
       lesson: lessonNumber,
-      lessonPrompt: lessonPrompt,
+      fullInstructions: fullInstructions,
       totalLessons: TOTAL_LESSONS,
     });
   } catch (error: any) {
