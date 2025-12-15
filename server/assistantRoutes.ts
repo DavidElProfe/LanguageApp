@@ -9,6 +9,7 @@ import {
   getLesson1Step,
   type Lesson1Step
 } from "./prompts/promptManager";
+import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/simpleConversationPrompt";
 
 export const assistantRouter = Router();
 
@@ -118,6 +119,41 @@ assistantRouter.get("/lesson1-step", (req, res) => {
   
   const stepPrompt = getLesson1Step(stepParam);
   res.json({ step: stepParam, stepPrompt });
+});
+
+assistantRouter.get("/simple-session", async (req, res) => {
+  try {
+    console.log("Creating SIMPLE MODE realtime session");
+    
+    const response = await openai.beta.realtime.sessions.create({
+      model: "gpt-4o-realtime-preview-2024-12-17",
+      voice: "alloy",
+      instructions: SIMPLE_CONVERSATION_PROMPT,
+      modalities: ["text", "audio"],
+      turn_detection: {
+        type: "server_vad",
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: 900,
+      },
+      input_audio_transcription: {
+        model: "whisper-1",
+        language: "en",
+      },
+    });
+
+    res.json({
+      token: response.client_secret.value,
+      mode: "simple",
+      fullInstructions: SIMPLE_CONVERSATION_PROMPT,
+    });
+  } catch (error: any) {
+    console.error("Error creating simple session:", error);
+    res.status(500).json({
+      error: "Failed to create simple session",
+      message: error.message,
+    });
+  }
 });
 
 interface TextChatMessage {

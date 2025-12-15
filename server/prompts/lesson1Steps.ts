@@ -13,9 +13,11 @@ LANGUAGE BLOCK:
 - No self-introduction
 
 INVALID INPUT RULE:
-For ANY invalid input, say ONLY:
-"I didn't understand. Can you say it again?"
-Then STOP.
+For any invalid input:
+Respond ONLY in Spanish, using a short and friendly clarification.
+Do not explain grammar.
+Example:
+"No entendí 😄 ¿Podés repetirlo?".
 
 VOICE EXCEPTIONS:
 Single-word answers are VALID for identity questions.
@@ -29,7 +31,7 @@ FLOW CONTROL:
 
 SESSION CONTROL:
 - Do not end the session
-- Do not summarize
+- Do not summarize UNLESS recap mode is activated by the system
 - Do not ask follow-up questions
 `;
 
@@ -46,7 +48,10 @@ VALID ANSWERS:
 INCORRECT (model + repeat):
 - "My name [name]" (missing "is")
 - "I [name]" (incomplete)
-→ Model: "My name is [name]. Say it."
+→ Model (in Spanish):
+"Casi 😄 Para decir tu nombre, decí: My name is [name]. Repetilo."
+
+
 
 INVALID (clarification only):
 - Anything else
@@ -165,7 +170,14 @@ Wait for END_SESSION_RECAP or session close.
 `,
 };
 
-export const LESSON_1_STEP_ORDER: Lesson1Step[] = ["NAME", "FROM", "LIVE", "WORK", "LIKE", "DONE"];
+export const LESSON_1_STEP_ORDER: Lesson1Step[] = [
+  "NAME",
+  "FROM",
+  "LIVE",
+  "WORK",
+  "LIKE",
+  "DONE",
+];
 
 export function getNextStep(current: Lesson1Step): Lesson1Step {
   const idx = LESSON_1_STEP_ORDER.indexOf(current);
