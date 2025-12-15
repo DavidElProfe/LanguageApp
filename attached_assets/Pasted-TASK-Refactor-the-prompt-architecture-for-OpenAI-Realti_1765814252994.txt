@@ -1,0 +1,103 @@
+TASK: Refactor the prompt architecture for OpenAI Realtime (gpt-4o-realtime-preview-2024-12-17).
+
+CONTEXT:
+We are using OpenAI Realtime API with voice input.
+The current system prompt is built as:
+BASE_PROMPT + LESSON_PROMPTS[lessonNumber]
+
+This produces a very long system prompt with conflicting rules.
+In Realtime, long and conflicting system prompts cause loss of obedience and unpredictable behavior.
+
+IMPORTANT DISCOVERY:
+Realtime models do NOT enforce priority between prompt sections.
+Earlier rules (BASE_PROMPT) dominate later rules (LESSON_PROMPTS).
+This breaks strict lesson control.
+
+GOAL:
+Implement a SHORT, STABLE system prompt.
+Move lesson-specific logic OUT of the system prompt.
+Preserve SESSION RECAP behavior.
+
+ABSOLUTE RULES:
+- Do NOT change lesson content or rules
+- Do NOT rewrite lesson prompts
+- Do NOT remove session recap
+- Do NOT add new AI features
+- Do NOT change model, temperature, or API
+- Do NOT change voice transcription logic
+- Only change HOW prompts are injected
+
+REQUIRED ARCHITECTURAL CHANGE:
+
+1) SYSTEM PROMPT (BASE_PROMPT)
+Modify BASE_PROMPT to be SHORT and GENERIC.
+
+BASE_PROMPT must contain ONLY:
+- Tutor role
+- Language rules (English only, simple sentences)
+- Realtime behavior (wait for user, one sentence)
+- Session recap trigger ONLY via "END_SESSION_RECAP"
+
+BASE_PROMPT must NOT contain:
+- Teaching method
+- Correction rules
+- Praise rules
+- Lesson flow
+- Introduction rules
+- Allowed questions
+- Vocabulary rules
+
+The BASE_PROMPT must explicitly state:
+"Lesson instructions provided later override all other behavior."
+
+2) LESSON PROMPT INJECTION (CRITICAL)
+LESSON_PROMPTS must NO LONGER be concatenated into the system prompt.
+
+Instead:
+- Inject the lesson prompt as a separate instruction message AFTER session start.
+- For Realtime:
+  - Send the lesson prompt as a conversation.item with role: "assistant"
+  - Type: instruction / text
+- For Text Chat:
+  - Send the lesson prompt as the FIRST assistant message after system initialization
+
+This ensures a cognitive mode switch in the model.
+
+3) PROMPT ORDER (MANDATORY)
+Final prompt order must be:
+
+1. system → BASE_PROMPT (short, stable)
+2. assistant → LESSON_PROMPT (full lesson rules)
+3. user → user input
+4. assistant → normal responses
+
+LESSON_PROMPT must be sent ONCE per session.
+
+4) SESSION RECAP (KEEP AS IS)
+- Session recap remains in BASE_PROMPT
+- Recap activates ONLY when input === "END_SESSION_RECAP"
+- Lesson prompt must NOT include recap logic
+
+5) IMPLEMENTATION LOCATIONS
+Update code in:
+- server/prompts/basePrompt.ts
+- getSystemPrompt() logic
+- Realtime session initialization
+- Text chat system message setup
+
+Remove ALL logic that concatenates BASE + LESSON into a single system prompt.
+
+OUTPUT REQUIRED:
+- Updated BASE_PROMPT (short version)
+- Updated getSystemPrompt logic
+- Confirmation that LESSON_PROMPTS are injected separately
+- No commentary or suggestions
+- No partial changes
+
+DO NOT:
+- Suggest alternative architectures
+- Add prioritization language to prompts
+- Add more rules to prompts
+- Touch client-side UX
+
+This change is REQUIRED for Realtime stability.
