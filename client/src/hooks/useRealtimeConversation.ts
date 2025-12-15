@@ -289,7 +289,12 @@ export function useRealtimeConversation(
 
       isStepBasedRef.current = false;
 
-      const pc = new RTCPeerConnection();
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: "stun:stun.l.google.com:19302" },
+          { urls: "stun:stun1.l.google.com:19302" },
+        ],
+      });
       pcRef.current = pc;
 
       const audioEl = document.createElement("audio");
@@ -467,6 +472,26 @@ export function useRealtimeConversation(
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
+      // Wait for ICE gathering to complete
+      await new Promise<void>((resolve) => {
+        if (pc.iceGatheringState === "complete") {
+          resolve();
+        } else {
+          const checkState = () => {
+            if (pc.iceGatheringState === "complete") {
+              pc.removeEventListener("icegatheringstatechange", checkState);
+              resolve();
+            }
+          };
+          pc.addEventListener("icegatheringstatechange", checkState);
+          // Timeout after 5 seconds
+          setTimeout(() => resolve(), 5000);
+        }
+      });
+
+      console.log("ICE gathering complete, sending SDP to OpenAI");
+      console.log("ICE connection state:", pc.iceConnectionState);
+
       const sdpRes = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
         {
@@ -476,12 +501,14 @@ export function useRealtimeConversation(
             "Content-Type": "application/sdp",
             "OpenAI-Beta": "realtime=v1",
           },
-          body: offer.sdp,
+          body: pc.localDescription?.sdp,
         },
       );
 
       const answer = await sdpRes.text();
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
+      
+      console.log("WebRTC connection established, ICE state:", pc.iceConnectionState);
     } catch (error) {
       console.error(error);
       setErrorMessage("Error al iniciar la conversación");
