@@ -151,7 +151,7 @@ export function useRealtimeConversation(
     isRecapRequestedRef.current = true;
     recapResponseSeenRef.current = false;
 
-    // Send system trigger to model
+    // Send system trigger to model (correct format for Realtime API)
     try {
       dcRef.current.send(
         JSON.stringify({
@@ -159,12 +159,17 @@ export function useRealtimeConversation(
           item: {
             type: "message",
             role: "user",
-            content: "END_SESSION_RECAP",
+            content: [
+              {
+                type: "input_text",
+                text: "END_SESSION_RECAP",
+              },
+            ],
           },
         })
       );
       dcRef.current.send(JSON.stringify({ type: "response.create" }));
-      console.log("📋 Recap requested");
+      console.log("📋 Recap requested (correct format)");
     } catch (error) {
       console.error("⚠️ Error sending recap trigger:", error);
       isRecapRequestedRef.current = false;
