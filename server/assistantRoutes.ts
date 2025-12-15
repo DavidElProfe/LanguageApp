@@ -132,9 +132,9 @@ assistantRouter.get("/simple-session", async (req, res) => {
       modalities: ["text", "audio"],
       turn_detection: {
         type: "server_vad",
-        threshold: 0.5,
-        prefix_padding_ms: 300,
-        silence_duration_ms: 900,
+        threshold: 0.6,
+        prefix_padding_ms: 500,
+        silence_duration_ms: 2000,
       },
       input_audio_transcription: {
         model: "whisper-1",
