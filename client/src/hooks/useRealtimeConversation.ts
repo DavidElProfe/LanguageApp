@@ -299,8 +299,25 @@ export function useRealtimeConversation(
 
       pc.ontrack = (e) => {
         console.log("Audio track received from OpenAI");
+        console.log("Stream tracks:", e.streams[0]?.getTracks().length);
         audioEl.srcObject = e.streams[0];
-        audioEl.play().catch(err => console.error("Audio play error:", err));
+        audioEl.volume = 1.0;
+        audioEl.muted = false;
+        
+        const playPromise = audioEl.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => console.log("Audio playing successfully"))
+            .catch(err => {
+              console.error("Audio play error:", err.name, err.message);
+              // Try unmuting and playing again
+              audioEl.muted = true;
+              audioEl.play().then(() => {
+                audioEl.muted = false;
+                console.log("Audio playing after unmute workaround");
+              }).catch(e2 => console.error("Second play attempt failed:", e2));
+            });
+        }
       };
 
       const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
