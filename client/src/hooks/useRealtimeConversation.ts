@@ -309,9 +309,11 @@ export function useRealtimeConversation(
       dcRef.current = dc;
 
       dc.addEventListener("open", () => {
+        console.log("DataChannel OPEN");
         setConnectionState("active");
         
         if (fullInstructions) {
+          console.log("Sending session.update with instructions");
           dc.send(JSON.stringify({
             type: "session.update",
             session: { instructions: fullInstructions }
@@ -319,13 +321,27 @@ export function useRealtimeConversation(
         }
         
         setTimeout(() => {
+          console.log("Sending response.create to trigger AI");
           dc.send(JSON.stringify({ type: "response.create" }));
         }, 100);
+      });
+      
+      dc.addEventListener("error", (e) => {
+        console.error("DataChannel ERROR:", e);
+      });
+      
+      dc.addEventListener("close", () => {
+        console.log("DataChannel CLOSED");
       });
 
       dc.addEventListener("message", (event) => {
         try {
           const data = JSON.parse(event.data);
+          
+          // Log all events from OpenAI for debugging
+          if (data.type) {
+            console.log("OpenAI event:", data.type);
+          }
 
           if (data.type === "conversation.item.input_audio_transcription.completed") {
             if (isRecapRequestedRef.current) return;
