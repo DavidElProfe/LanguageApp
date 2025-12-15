@@ -230,6 +230,8 @@ export function useRealtimeConversation(
 
     if (audioRef.current) {
       audioRef.current.srcObject = null;
+      audioRef.current.remove();
+      audioRef.current = null;
     }
 
     lastUserTranscriptRef.current = null;
@@ -292,10 +294,13 @@ export function useRealtimeConversation(
 
       const audioEl = document.createElement("audio");
       audioEl.autoplay = true;
+      document.body.appendChild(audioEl);
       audioRef.current = audioEl;
 
       pc.ontrack = (e) => {
+        console.log("Audio track received from OpenAI");
         audioEl.srcObject = e.streams[0];
+        audioEl.play().catch(err => console.error("Audio play error:", err));
       };
 
       const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
