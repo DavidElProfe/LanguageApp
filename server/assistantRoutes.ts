@@ -123,7 +123,8 @@ assistantRouter.get("/lesson1-step", (req, res) => {
 
 assistantRouter.get("/simple-session", async (req, res) => {
   try {
-    console.log("Creating SIMPLE MODE realtime session");
+    console.log("=== SIMPLE SESSION REQUEST ===");
+    console.log("OpenAI API Key exists:", !!process.env.OPENAI_API_KEY);
     
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17",
@@ -142,13 +143,17 @@ assistantRouter.get("/simple-session", async (req, res) => {
       },
     });
 
+    console.log("Session created successfully, token length:", response.client_secret?.value?.length);
+    
     res.json({
       token: response.client_secret.value,
       mode: "simple",
       fullInstructions: SIMPLE_CONVERSATION_PROMPT,
     });
   } catch (error: any) {
-    console.error("Error creating simple session:", error);
+    console.error("=== SIMPLE SESSION ERROR ===");
+    console.error("Error:", error.message);
+    console.error("Full error:", error);
     res.status(500).json({
       error: "Failed to create simple session",
       message: error.message,
