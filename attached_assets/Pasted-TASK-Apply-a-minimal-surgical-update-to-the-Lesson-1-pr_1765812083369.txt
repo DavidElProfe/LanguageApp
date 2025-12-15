@@ -1,0 +1,85 @@
+TASK: Apply a minimal, surgical update to the Lesson 1 prompt.
+
+CONTEXT:
+We have a production-ready Lesson 1 prompt with strict pedagogical and control rules.
+The lesson logic, flow, vocabulary limits, and correction rules are FINAL and MUST NOT be changed.
+
+PROBLEM:
+The voice experience breaks due to:
+1) ASR producing single-word answers (e.g. names, places)
+2) The system auto-generating a session recap outside lesson control
+
+GOAL:
+Fix VOICE usability and allow FINAL FEEDBACK ONLY at system session end,
+WITHOUT altering lesson behavior during the conversation.
+
+STRICT RULES (DO NOT VIOLATE):
+- Do NOT change lesson flow
+- Do NOT change allowed questions
+- Do NOT add new content
+- Do NOT loosen topic restrictions
+- Do NOT modify correction logic
+- Do NOT add new pedagogical features
+- Do NOT refactor structure or formatting
+- Do NOT add greetings or social language
+
+REQUIRED CHANGES (ONLY THESE):
+
+1) VOICE INPUT EXCEPTION
+Add a new section titled:
+"===== VOICE INPUT EXCEPTIONS (MANDATORY) ====="
+
+Rules:
+- Single-word answers are VALID (not INVALID) ONLY when answering:
+  - "What is your name?"
+  - "Where are you from?"
+  - "Where do you live?"
+  - "Where do you work?"
+- These single-word answers must be treated as INCORRECT:
+  - Model the correct full sentence
+  - Ask the student to repeat ONCE
+- Single-word answers are also VALID for:
+  - "What do you like?" (food or simple activity only)
+- All other single-word inputs remain INVALID
+
+2) LESSON START ENFORCEMENT
+Add a section:
+"===== LESSON START (MANDATORY) ====="
+
+Rule:
+- The FIRST assistant message MUST be exactly:
+  "What is your name?"
+- No greeting
+- No introduction
+- No additional words
+
+3) FINAL FEEDBACK MODE
+Add a section:
+"===== FINAL FEEDBACK MODE (SYSTEM-TRIGGERED ONLY) ====="
+
+Rules:
+- Applies ONLY when the SYSTEM ends the session
+- Provide short feedback (2–3 sentences max)
+- Mention:
+  - What the student practiced
+  - One thing done well
+  - One simple suggestion
+- Use very simple English
+- Do NOT ask questions
+- Do NOT restart conversation
+- Do NOT introduce new content
+
+Example:
+"Today you practiced introductions and likes.
+You used complete sentences.
+Try to speak slowly next time."
+
+IMPORTANT:
+- During the lesson, the assistant MUST NEVER summarize or give feedback
+- Final feedback is allowed ONLY at system session end
+
+OUTPUT REQUIRED:
+- Return the FULL updated Lesson 1 prompt
+- Preserve all original rules and wording unless explicitly changed above
+- Do NOT add commentary or explanations
+- Do NOT propose alternatives
