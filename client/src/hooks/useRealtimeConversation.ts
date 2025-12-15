@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
 
-type ExpectedAnswerType = "NAME" | "FROM" | "LIVE" | "WORK" | "LIKE" | "ANY";
+type Lesson1Step = "NAME" | "FROM" | "LIVE" | "WORK" | "LIKE" | "DONE";
 
 export interface ConversationMessage {
   id: string;
@@ -11,39 +11,62 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
-const COUNTRIES = ["argentina", "brazil", "mexico", "spain", "usa", "united states", "canada", "france", "germany", "italy", "japan", "china", "india", "australia", "uk", "england", "colombia", "chile", "peru", "venezuela"];
-const CITIES = ["buenos aires", "new york", "madrid", "paris", "london", "tokyo", "beijing", "sydney", "toronto", "berlin", "rome", "barcelona", "miami", "los angeles", "chicago"];
+const STEP_ORDER: Lesson1Step[] = ["NAME", "FROM", "LIVE", "WORK", "LIKE", "DONE"];
 
-function validateInputForLesson1(transcript: string, expected: ExpectedAnswerType): boolean {
+function getNextStep(current: Lesson1Step): Lesson1Step {
+  const idx = STEP_ORDER.indexOf(current);
+  if (idx === -1 || idx >= STEP_ORDER.length - 1) return "DONE";
+  return STEP_ORDER[idx + 1];
+}
+
+function isCorrectAnswer(transcript: string, step: Lesson1Step): boolean {
   const t = transcript.toLowerCase().trim();
   if (!t || t.length < 2) return false;
   
-  switch (expected) {
+  switch (step) {
     case "NAME":
-      return t.includes("name is") || t.includes("i am") || t.includes("i'm") || (t.split(/\s+/).length <= 3);
+      return t.includes("my name is") || t.includes("i am") || t.includes("i'm");
     case "FROM":
-      return t.includes("from") || t.includes("i am from") || COUNTRIES.some(c => t.includes(c));
+      return t.includes("i am from") || t.includes("i'm from");
     case "LIVE":
-      return t.includes("live") || t.includes("i live") || CITIES.some(c => t.includes(c));
+      return t.includes("i live in") || t.includes("i live");
     case "WORK":
-      return t.includes("work") || t.includes("i work") || t.includes("office") || t.includes("company") || t.includes("home");
+      return t.includes("i work in") || t.includes("i work at") || t.includes("i work");
     case "LIKE":
-      return t.includes("like") || t.includes("i like") || t.includes("don't like") || t.includes("food") || t.includes("music") || t.includes("movies");
-    case "ANY":
-      return true;
+      return t.includes("i like") || t.includes("i don't like");
+    default:
+      return false;
+  }
+}
+
+function isValidInput(transcript: string, step: Lesson1Step): boolean {
+  const t = transcript.toLowerCase().trim();
+  if (!t || t.length < 2) return false;
+  
+  switch (step) {
+    case "NAME":
+      return t.includes("name") || t.includes("i am") || t.includes("i'm") || (t.split(/\s+/).length <= 3);
+    case "FROM":
+      return t.includes("from") || t.includes("argentina") || t.includes("mexico") || t.includes("spain") || t.includes("usa") || t.includes("brazil");
+    case "LIVE":
+      return t.includes("live") || t.includes("buenos aires") || t.includes("new york") || t.includes("madrid");
+    case "WORK":
+      return t.includes("work") || t.includes("office") || t.includes("company") || t.includes("home");
+    case "LIKE":
+      return t.includes("like") || t.includes("food") || t.includes("music") || t.includes("movies");
     default:
       return true;
   }
 }
 
-function detectExpectedAnswerFromAssistant(text: string): ExpectedAnswerType {
+function detectStepFromAssistantQuestion(text: string): Lesson1Step | null {
   const t = text.toLowerCase();
-  if (t.includes("what is your name") || t.includes("your name")) return "NAME";
-  if (t.includes("where are you from") || t.includes("are you from")) return "FROM";
-  if (t.includes("where do you live") || t.includes("do you live")) return "LIVE";
-  if (t.includes("where do you work") || t.includes("do you work")) return "WORK";
-  if (t.includes("what do you like") || t.includes("do you like")) return "LIKE";
-  return "ANY";
+  if (t.includes("what is your name")) return "NAME";
+  if (t.includes("where are you from")) return "FROM";
+  if (t.includes("where do you live")) return "LIVE";
+  if (t.includes("where do you work")) return "WORK";
+  if (t.includes("what do you like")) return "LIKE";
+  return null;
 }
 
 interface UseRealtimeConversationOptions {
@@ -55,6 +78,7 @@ interface UseRealtimeConversationReturn {
   errorMessage: string;
   messages: ConversationMessage[];
   currentLesson: number;
+  currentStep: Lesson1Step;
   startConversation: () => Promise<void>;
   stopConversation: () => Promise<void>;
   requestSessionRecap: () => void;
@@ -65,11 +89,11 @@ export function useRealtimeConversation(
 ): UseRealtimeConversationReturn {
   const { lesson = 1 } = options;
 
-  const [connectionState, setConnectionState] =
-    useState<ConnectionState>("idle");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [confirmedLesson, setConfirmedLesson] = useState<number>(lesson);
+  const [currentStep, setCurrentStep] = useState<Lesson1Step>("NAME");
 
   const lessonRef = useRef<number>(lesson);
   lessonRef.current = lesson;
@@ -80,24 +104,22 @@ export function useRealtimeConversation(
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
-  // 👉 guarda la última frase del usuario (NO renderiza)
   const lastUserTranscriptRef = useRef<string | null>(null);
-  
-  // 👉 recap flow control
   const isRecapRequestedRef = useRef<boolean>(false);
   const recapCloseScheduledRef = useRef<boolean>(false);
   
-  // 👉 Voice Input Gate: track expected answer type
-  const expectedAnswerRef = useRef<ExpectedAnswerType>("NAME");
-  const inputRejectedRef = useRef<boolean>(false);
+  const currentStepRef = useRef<Lesson1Step>("NAME");
+  const isStepBasedRef = useRef<boolean>(false);
+  const stepAdvancePendingRef = useRef<boolean>(false);
 
   useEffect(() => {
-    if (
-      connectionState === "idle" ||
-      connectionState === "ended" ||
-      connectionState === "error"
-    ) {
+    currentStepRef.current = currentStep;
+  }, [currentStep]);
+
+  useEffect(() => {
+    if (connectionState === "idle" || connectionState === "ended" || connectionState === "error") {
       setConfirmedLesson(lesson);
+      setCurrentStep("NAME");
     }
   }, [lesson, connectionState]);
 
@@ -107,10 +129,7 @@ export function useRealtimeConversation(
     });
   }, []);
 
-  const saveMessageToBackend = async (
-    role: "user" | "assistant",
-    content: string,
-  ) => {
+  const saveMessageToBackend = async (role: "user" | "assistant", content: string) => {
     if (!sessionIdRef.current || !content.trim()) return;
 
     try {
@@ -121,10 +140,7 @@ export function useRealtimeConversation(
       const supabase = globalThis.__supabaseClient;
       if (!supabase) return;
 
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
+      const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
 
       await fetch(`/api/ai-sessions/${sessionIdRef.current}/messages`, {
@@ -136,7 +152,7 @@ export function useRealtimeConversation(
         body: JSON.stringify({ role, content }),
       });
     } catch (error) {
-      console.error("⚠️ Error saving message:", error);
+      console.error("Error saving message:", error);
     }
   };
 
@@ -144,16 +160,49 @@ export function useRealtimeConversation(
     return () => {
       stopConversation().catch(console.error);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const advanceToNextStep = async () => {
+    const dc = dcRef.current;
+    if (!dc || dc.readyState !== "open" || !isStepBasedRef.current) return;
+    
+    const nextStep = getNextStep(currentStepRef.current);
+    console.log(`📍 Advancing from ${currentStepRef.current} to ${nextStep}`);
+    
+    if (nextStep === "DONE") {
+      setCurrentStep("DONE");
+      currentStepRef.current = "DONE";
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/assistant/lesson1-step?step=${nextStep}`);
+      const data = await res.json();
+      
+      dc.send(JSON.stringify({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "input_text", text: data.prompt }]
+        }
+      }));
+      
+      dc.send(JSON.stringify({ type: "response.create" }));
+      
+      setCurrentStep(nextStep);
+      currentStepRef.current = nextStep;
+      stepAdvancePendingRef.current = false;
+    } catch (error) {
+      console.error("Error advancing step:", error);
+    }
+  };
 
   const stopConversation = async () => {
     const sessionId = sessionIdRef.current;
 
     if (sessionId) {
-      fetch(`/api/ai-sessions/end/${sessionId}`, { method: "POST" }).catch(
-        console.error,
-      );
+      fetch(`/api/ai-sessions/end/${sessionId}`, { method: "POST" }).catch(console.error);
       sessionIdRef.current = null;
     }
 
@@ -179,22 +228,22 @@ export function useRealtimeConversation(
     lastUserTranscriptRef.current = null;
     isRecapRequestedRef.current = false;
     recapCloseScheduledRef.current = false;
-    expectedAnswerRef.current = "NAME";
-    inputRejectedRef.current = false;
+    currentStepRef.current = "NAME";
+    isStepBasedRef.current = false;
+    stepAdvancePendingRef.current = false;
 
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
   };
 
   const requestSessionRecap = () => {
     if (!dcRef.current || dcRef.current.readyState !== "open") {
-      console.warn("⚠️ DataChannel not open, cannot request recap");
+      console.warn("DataChannel not open, cannot request recap");
       return;
     }
 
     isRecapRequestedRef.current = true;
     recapCloseScheduledRef.current = false;
 
-    // Send system trigger to model (correct format for Realtime API)
     try {
       dcRef.current.send(
         JSON.stringify({
@@ -202,19 +251,14 @@ export function useRealtimeConversation(
           item: {
             type: "message",
             role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: "END_SESSION_RECAP",
-              },
-            ],
+            content: [{ type: "input_text", text: "END_SESSION_RECAP" }],
           },
         })
       );
       dcRef.current.send(JSON.stringify({ type: "response.create" }));
-      console.log("📋 Recap requested (correct format)");
+      console.log("Recap requested");
     } catch (error) {
-      console.error("⚠️ Error sending recap trigger:", error);
+      console.error("Error sending recap trigger:", error);
       isRecapRequestedRef.current = false;
     }
   };
@@ -223,16 +267,22 @@ export function useRealtimeConversation(
     try {
       setConnectionState("connecting");
       setErrorMessage("");
+      setCurrentStep("NAME");
+      currentStepRef.current = "NAME";
 
-      const tokenRes = await fetch(
-        `/api/assistant/realtime-token?lesson=${lessonRef.current}`,
-      );
+      const tokenRes = await fetch(`/api/assistant/realtime-token?lesson=${lessonRef.current}`);
       if (!tokenRes.ok) throw new Error("No se pudo obtener el token");
 
       const tokenData = await tokenRes.json();
-      const { token, lesson: serverLesson, fullInstructions } = tokenData;
+      const { token, lesson: serverLesson, fullInstructions, isStepBased, currentStep: serverStep } = tokenData;
 
       if (serverLesson) setConfirmedLesson(serverLesson);
+      isStepBasedRef.current = isStepBased || false;
+      
+      if (serverStep) {
+        setCurrentStep(serverStep);
+        currentStepRef.current = serverStep;
+      }
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
@@ -255,67 +305,62 @@ export function useRealtimeConversation(
       dc.addEventListener("open", () => {
         setConnectionState("active");
         
-        // Update session with full instructions (base + lesson)
         if (fullInstructions) {
           dc.send(JSON.stringify({
             type: "session.update",
-            session: {
-              instructions: fullInstructions
-            }
+            session: { instructions: fullInstructions }
           }));
+          
+          setTimeout(() => {
+            dc.send(JSON.stringify({ type: "response.create" }));
+          }, 100);
+        } else {
+          dc.send(JSON.stringify({ type: "response.create" }));
         }
-        
-        dc.send(JSON.stringify({ type: "response.create" }));
       });
 
       dc.addEventListener("message", (event) => {
         try {
           const data = JSON.parse(event.data);
 
-          // 🎤 Usuario habla → Whisper transcription
-          if (
-            data.type ===
-            "conversation.item.input_audio_transcription.completed"
-          ) {
-            if (isRecapRequestedRef.current) {
-              return;
-            }
+          if (data.type === "conversation.item.input_audio_transcription.completed") {
+            if (isRecapRequestedRef.current) return;
+            
             const text = data.transcript?.trim();
             if (!text) return;
             
-            // 🚧 Voice Input Gate: validate before allowing model to respond
-            const isValid = validateInputForLesson1(text, expectedAnswerRef.current);
-            
-            if (!isValid) {
-              inputRejectedRef.current = true;
-              lastUserTranscriptRef.current = null;
+            if (isStepBasedRef.current) {
+              const step = currentStepRef.current;
               
-              // Cancel pending model response and send fixed clarification
-              try {
-                dc.send(JSON.stringify({ type: "response.cancel" }));
-                dc.send(JSON.stringify({
-                  type: "conversation.item.create",
-                  item: {
-                    type: "message",
-                    role: "assistant",
-                    content: [{ type: "input_text", text: "I didn't understand. Can you say it again?" }]
-                  }
-                }));
-                dc.send(JSON.stringify({ type: "response.create" }));
-              } catch {}
-              return;
+              if (!isValidInput(text, step)) {
+                lastUserTranscriptRef.current = null;
+                try {
+                  dc.send(JSON.stringify({ type: "response.cancel" }));
+                  dc.send(JSON.stringify({
+                    type: "conversation.item.create",
+                    item: {
+                      type: "message",
+                      role: "assistant",
+                      content: [{ type: "input_text", text: "I didn't understand. Can you say it again?" }]
+                    }
+                  }));
+                  dc.send(JSON.stringify({ type: "response.create" }));
+                } catch {}
+                return;
+              }
+              
+              if (isCorrectAnswer(text, step)) {
+                stepAdvancePendingRef.current = true;
+              }
             }
             
-            inputRejectedRef.current = false;
             lastUserTranscriptRef.current = text;
           }
 
-          // 🤖 Respuesta final del asistente
           if (data.type === "response.audio_transcript.done") {
             const assistantText = data.transcript?.trim();
             if (!assistantText) return;
 
-            // 👉 If recap was requested, estimate audio duration and schedule close
             if (isRecapRequestedRef.current && !recapCloseScheduledRef.current) {
               recapCloseScheduledRef.current = true;
               setMessages((prev) => [
@@ -329,7 +374,6 @@ export function useRealtimeConversation(
               ]);
               saveMessageToBackend("assistant", assistantText);
               
-              // Estimar duración: ~2.5 palabras/segundo = 400ms por palabra + 2s buffer
               const wordCount = assistantText.split(/\s+/).length;
               const estimatedMs = Math.max(wordCount * 400 + 2000, 5000);
               
@@ -339,12 +383,8 @@ export function useRealtimeConversation(
               return;
             }
 
-            // Update expected answer based on assistant's question
-            expectedAnswerRef.current = detectExpectedAnswerFromAssistant(assistantText);
-
             const userText = lastUserTranscriptRef.current;
 
-            // 👉 ahora sí mostramos el mensaje del usuario (confirmado)
             if (userText) {
               setMessages((prev) => [
                 ...prev,
@@ -359,7 +399,6 @@ export function useRealtimeConversation(
               lastUserTranscriptRef.current = null;
             }
 
-            // 👉 mostramos la respuesta del asistente
             setMessages((prev) => [
               ...prev,
               {
@@ -370,6 +409,24 @@ export function useRealtimeConversation(
               },
             ]);
             saveMessageToBackend("assistant", assistantText);
+
+            if (isStepBasedRef.current && stepAdvancePendingRef.current) {
+              const detectedStep = detectStepFromAssistantQuestion(assistantText);
+              const nextStep = getNextStep(currentStepRef.current);
+              
+              if (detectedStep === nextStep) {
+                setCurrentStep(nextStep);
+                currentStepRef.current = nextStep;
+                stepAdvancePendingRef.current = false;
+                console.log(`📍 Step advanced to ${nextStep} (model asked)`);
+              } else if (!detectedStep && !assistantText.toLowerCase().includes("say it")) {
+                setTimeout(() => {
+                  advanceToNextStep();
+                }, 500);
+              } else {
+                stepAdvancePendingRef.current = false;
+              }
+            }
           }
         } catch (e) {
           console.error("Error parsing realtime event:", e);
@@ -407,6 +464,7 @@ export function useRealtimeConversation(
     errorMessage,
     messages,
     currentLesson: confirmedLesson,
+    currentStep,
     startConversation,
     stopConversation,
     requestSessionRecap,

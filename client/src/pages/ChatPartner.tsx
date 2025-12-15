@@ -34,7 +34,7 @@ export default function ChatPartner() {
   const [showDebugChat, setShowDebugChat] = useState(false);
   const [recapRequested, setRecapRequested] = useState(false);
   
-  const { connectionState, errorMessage, messages, currentLesson, startConversation, stopConversation, requestSessionRecap } =
+  const { connectionState, errorMessage, messages, currentLesson, currentStep, startConversation, stopConversation, requestSessionRecap } =
     useRealtimeConversation({ lesson: selectedLesson });
 
   return (

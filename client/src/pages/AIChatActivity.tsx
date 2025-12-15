@@ -58,7 +58,7 @@ export default function AIChatActivity() {
   // Get lesson order for the AI prompt system (1-10)
   const lessonOrder = lesson?.order ?? 1;
   
-  const { connectionState, errorMessage, messages, startConversation, stopConversation } =
+  const { connectionState, errorMessage, messages, currentStep, startConversation, stopConversation } =
     useRealtimeConversation({ lesson: lessonOrder });
 
   const completeActivity = useMutation({
