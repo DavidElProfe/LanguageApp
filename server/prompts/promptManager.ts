@@ -15,7 +15,10 @@ export function getBasePrompt(): string {
 
 export function getLessonPrompt(lessonNumber: number): string {
   const validLesson = Math.max(1, Math.min(lessonNumber, TOTAL_LESSONS));
-  return LESSON_PROMPTS[validLesson] || LESSON_PROMPTS[1];
+  if (validLesson === 1) {
+    return "";
+  }
+  return LESSON_PROMPTS[validLesson] || LESSON_PROMPTS[2];
 }
 
 export function getSystemPrompt(lessonNumber: number): string {

@@ -59,15 +59,6 @@ function isValidInput(transcript: string, step: Lesson1Step): boolean {
   }
 }
 
-function detectStepFromAssistantQuestion(text: string): Lesson1Step | null {
-  const t = text.toLowerCase();
-  if (t.includes("what is your name")) return "NAME";
-  if (t.includes("where are you from")) return "FROM";
-  if (t.includes("where do you live")) return "LIVE";
-  if (t.includes("where do you work")) return "WORK";
-  if (t.includes("what do you like")) return "LIKE";
-  return null;
-}
 
 interface UseRealtimeConversationOptions {
   lesson?: number;
@@ -166,12 +157,15 @@ export function useRealtimeConversation(
     const dc = dcRef.current;
     if (!dc || dc.readyState !== "open" || !isStepBasedRef.current) return;
     
+    if (stepAdvancePendingRef.current === false) return;
+    
     const nextStep = getNextStep(currentStepRef.current);
     console.log(`📍 Advancing from ${currentStepRef.current} to ${nextStep}`);
     
     if (nextStep === "DONE") {
       setCurrentStep("DONE");
       currentStepRef.current = "DONE";
+      stepAdvancePendingRef.current = false;
       return;
     }
 
@@ -184,9 +178,11 @@ export function useRealtimeConversation(
         item: {
           type: "message",
           role: "assistant",
-          content: [{ type: "input_text", text: data.prompt }]
+          content: [{ type: "input_text", text: data.stepPrompt }]
         }
       }));
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
       
       dc.send(JSON.stringify({ type: "response.create" }));
       
@@ -195,6 +191,7 @@ export function useRealtimeConversation(
       stepAdvancePendingRef.current = false;
     } catch (error) {
       console.error("Error advancing step:", error);
+      stepAdvancePendingRef.current = false;
     }
   };
 
@@ -305,7 +302,29 @@ export function useRealtimeConversation(
       dc.addEventListener("open", () => {
         setConnectionState("active");
         
-        if (fullInstructions) {
+        if (isStepBasedRef.current && tokenData.masterPrompt && tokenData.stepPrompt) {
+          dc.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "input_text", text: tokenData.masterPrompt }]
+            }
+          }));
+          
+          dc.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "input_text", text: tokenData.stepPrompt }]
+            }
+          }));
+          
+          setTimeout(() => {
+            dc.send(JSON.stringify({ type: "response.create" }));
+          }, 100);
+        } else if (fullInstructions) {
           dc.send(JSON.stringify({
             type: "session.update",
             session: { instructions: fullInstructions }
@@ -332,19 +351,35 @@ export function useRealtimeConversation(
             if (isStepBasedRef.current) {
               const step = currentStepRef.current;
               
-              if (!isValidInput(text, step)) {
+              if (step === "DONE") {
                 lastUserTranscriptRef.current = null;
                 try {
                   dc.send(JSON.stringify({ type: "response.cancel" }));
-                  dc.send(JSON.stringify({
-                    type: "conversation.item.create",
-                    item: {
-                      type: "message",
-                      role: "assistant",
-                      content: [{ type: "input_text", text: "I didn't understand. Can you say it again?" }]
-                    }
-                  }));
-                  dc.send(JSON.stringify({ type: "response.create" }));
+                } catch {}
+                return;
+              }
+              
+              if (!isValidInput(text, step)) {
+                lastUserTranscriptRef.current = null;
+                
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `user-${Date.now()}`,
+                    role: "user",
+                    text: text,
+                    timestamp: Date.now(),
+                  },
+                  {
+                    id: `assistant-invalid-${Date.now()}`,
+                    role: "assistant",
+                    text: "I didn't understand. Can you say it again?",
+                    timestamp: Date.now(),
+                  },
+                ]);
+                
+                try {
+                  dc.send(JSON.stringify({ type: "response.cancel" }));
                 } catch {}
                 return;
               }
@@ -411,15 +446,7 @@ export function useRealtimeConversation(
             saveMessageToBackend("assistant", assistantText);
 
             if (isStepBasedRef.current && stepAdvancePendingRef.current) {
-              const detectedStep = detectStepFromAssistantQuestion(assistantText);
-              const nextStep = getNextStep(currentStepRef.current);
-              
-              if (detectedStep === nextStep) {
-                setCurrentStep(nextStep);
-                currentStepRef.current = nextStep;
-                stepAdvancePendingRef.current = false;
-                console.log(`📍 Step advanced to ${nextStep} (model asked)`);
-              } else if (!detectedStep && !assistantText.toLowerCase().includes("say it")) {
+              if (!assistantText.toLowerCase().includes("say it")) {
                 setTimeout(() => {
                   advanceToNextStep();
                 }, 500);

@@ -41,8 +41,35 @@ assistantRouter.get("/realtime-token", async (req, res) => {
       const step = stepParam || "NAME";
       initialStep = step;
       const stepPrompt = getLesson1Step(step);
-      fullInstructions = basePrompt + "\n\n" + masterPrompt + "\n\n" + stepPrompt;
+      fullInstructions = basePrompt;
       console.log(`Creating realtime session for Lesson 1, Step: ${step}`);
+      
+      res.json({
+        token: (await openai.beta.realtime.sessions.create({
+          model: "gpt-4o-realtime-preview-2024-12-17",
+          voice: "alloy",
+          instructions: basePrompt,
+          modalities: ["text", "audio"],
+          turn_detection: {
+            type: "server_vad",
+            threshold: 0.5,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 900,
+          },
+          input_audio_transcription: {
+            model: "whisper-1",
+            language: "en",
+          },
+        })).client_secret.value,
+        lesson: lessonNumber,
+        basePrompt: basePrompt,
+        masterPrompt: masterPrompt,
+        stepPrompt: stepPrompt,
+        totalLessons: TOTAL_LESSONS,
+        isStepBased: true,
+        currentStep: initialStep,
+      });
+      return;
     } else {
       const lessonPrompt = getLessonPrompt(lessonNumber);
       fullInstructions = basePrompt + "\n\n" + lessonPrompt;
@@ -90,7 +117,7 @@ assistantRouter.get("/lesson1-step", (req, res) => {
   }
   
   const stepPrompt = getLesson1Step(stepParam);
-  res.json({ step: stepParam, prompt: stepPrompt });
+  res.json({ step: stepParam, stepPrompt });
 });
 
 interface TextChatMessage {
@@ -115,12 +142,19 @@ assistantRouter.post("/text-chat", async (req, res) => {
     }
     
     const basePrompt = getBasePrompt();
-    const lessonPrompt = getLessonPrompt(lessonNumber);
     
-    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: basePrompt },
-      { role: "assistant", content: lessonPrompt },
-    ];
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [];
+    
+    if (lessonNumber === 1) {
+      const masterPrompt = getLesson1MasterPrompt();
+      const stepPrompt = getLesson1Step("NAME");
+      messages.push({ role: "system", content: basePrompt });
+      messages.push({ role: "assistant", content: masterPrompt + "\n\n" + stepPrompt });
+    } else {
+      const lessonPrompt = getLessonPrompt(lessonNumber);
+      messages.push({ role: "system", content: basePrompt });
+      messages.push({ role: "assistant", content: lessonPrompt });
+    }
     
     if (history && Array.isArray(history)) {
       for (const msg of history as TextChatMessage[]) {

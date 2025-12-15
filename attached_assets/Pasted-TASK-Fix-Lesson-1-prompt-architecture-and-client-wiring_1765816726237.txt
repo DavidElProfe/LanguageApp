@@ -1,0 +1,100 @@
+TASK: Fix Lesson 1 prompt architecture and client wiring.
+This applies ONLY to Lesson 1. Do NOT touch other lessons.
+
+CURRENT PROBLEM:
+Lesson 1 is using TWO architectures at the same time:
+1) Old monolithic lesson prompt (LESSON_PROMPTS[1])
+2) New step-based architecture (LESSON_1_MASTER_PROMPT + STEPS)
+
+This causes:
+- Random assistant responses ("Okay.")
+- Repeated questions
+- Invalid input handled inconsistently
+- Step resets and loops
+- Model speaking without an active step
+
+GOAL:
+Use STEP-BASED ARCHITECTURE ONLY for Lesson 1.
+The client controls flow. The model only executes the current step.
+
+ABSOLUTE RULES:
+- Do NOT change lesson pedagogy
+- Do NOT rewrite step content
+- Do NOT generalize to other lessons
+- Do NOT add new AI behavior
+- Do NOT allow the model to decide flow
+- Do NOT remove session recap logic
+
+REQUIRED CHANGES (MANDATORY):
+
+1) DISABLE OLD LESSON PROMPT FOR LESSON 1
+For Lesson 1 ONLY:
+- STOP injecting LESSON_PROMPTS[1]
+- DO NOT concatenate it with BASE_PROMPT
+- The model must NEVER receive LESSON_PROMPTS[1]
+
+Lesson 1 must use ONLY:
+1. BASE_PROMPT (short, generic)
+2. LESSON_1_MASTER_PROMPT (global rules)
+3. ONE STEP PROMPT (current step)
+
+2) PROMPT INJECTION ORDER (STRICT)
+For Lesson 1 sessions, enforce this order:
+
+- system → BASE_PROMPT
+- assistant → LESSON_1_MASTER_PROMPT (send ONCE at session start)
+- assistant → STEP_PROMPT (send ONCE per step)
+- user → user input
+- assistant → response
+
+DO NOT resend BASE or MASTER after step changes.
+ONLY inject the next STEP prompt when advancing.
+
+3) STEP LIFECYCLE CONTROL (CLIENT-SIDE)
+Implement strict step control:
+
+- currentStep starts at "NAME"
+- A step is injected ONLY once
+- The step remains active until a CORRECT answer
+- INVALID or INCORRECT input must NOT change the step
+- Advance step ONLY on CORRECT input
+- When step === "DONE", the assistant must not speak
+
+4) INVALID INPUT HANDLING (CLIENT ONLY)
+INVALID input must NEVER be sent to the model.
+
+If input is INVALID:
+- Immediately emit assistant text:
+  "I didn't understand. Can you say it again?"
+- Do NOT inject a step
+- Do NOT resend the question
+- Do NOT advance step
+- Do NOT call the model
+
+5) BLOCK MODEL WITHOUT ACTIVE STEP
+Add a hard guard:
+- If there is no active step, the model must not receive input
+- If step === "DONE", ignore all input until END_SESSION_RECAP
+
+This prevents fallback replies like "Okay."
+
+6) SESSION RECAP (UNCHANGED)
+- Recap remains controlled ONLY by input === "END_SESSION_RECAP"
+- Steps must NEVER trigger recap
+- Lesson 1 must not initiate feedback on its own
+
+OUTPUT REQUIRED:
+- Lesson 1 uses ONLY step-based prompts
+- LESSON_PROMPTS[1] is no longer used for Lesson 1
+- Model never responds without an active step
+- No random filler responses
+- No repeated questions
+- No flow decisions by the model
+
+DO NOT:
+- Keep both architectures
+- Reinject steps multiple times
+- Let the model classify invalid input
+- Change other lessons
+
+This is a targeted fix for Lesson 1 only.
