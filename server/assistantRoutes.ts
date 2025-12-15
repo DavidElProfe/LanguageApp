@@ -124,7 +124,6 @@ assistantRouter.get("/lesson1-step", (req, res) => {
 assistantRouter.get("/simple-session", async (req, res) => {
   try {
     console.log("=== SIMPLE SESSION REQUEST ===");
-    console.log("OpenAI API Key exists:", !!process.env.OPENAI_API_KEY);
     
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17",
@@ -143,7 +142,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
       },
     });
 
-    console.log("Session created successfully, token length:", response.client_secret?.value?.length);
+    console.log("OPENAI_RESPONSE_OK - Session created, token length:", response.client_secret?.value?.length);
     
     res.json({
       token: response.client_secret.value,
@@ -151,12 +150,25 @@ assistantRouter.get("/simple-session", async (req, res) => {
       fullInstructions: SIMPLE_CONVERSATION_PROMPT,
     });
   } catch (error: any) {
-    console.error("=== SIMPLE SESSION ERROR ===");
-    console.error("Error:", error.message);
-    console.error("Full error:", error);
+    console.error("=== OPENAI API ERROR ===");
+    console.error("Status:", error.status);
+    console.error("Code:", error.code);
+    console.error("Type:", error.type);
+    console.error("Message:", error.message);
+    
+    if (error.status === 429 || error.code === "insufficient_quota") {
+      console.error("OPENAI_QUOTA_EXCEEDED");
+    } else if (error.status === 401) {
+      console.error("OPENAI_AUTH_ERROR");
+    } else {
+      console.error("OPENAI_OTHER_ERROR");
+    }
+    
     res.status(500).json({
       error: "Failed to create simple session",
       message: error.message,
+      openai_error_code: error.code,
+      openai_error_type: error.type,
     });
   }
 });
