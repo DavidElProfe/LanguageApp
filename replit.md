@@ -33,10 +33,14 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **AI Voice Conversation Feature**: Real-time WebRTC voice practice using OpenAI Realtime API, including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Session usage time is tracked in the `ai_sessions` table (started_at, ended_at). This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
 - **AI Text Chat Feature**: Text-based alternative to voice chat using OpenAI Chat Completions API (gpt-4o). Uses the exact same lesson-based prompt system as voice chat. Available at `/text-chat` route. Useful for testing without audio or in public places.
 - **Lesson-Based Prompt System**: Unified modular prompt architecture in `server/prompts/` with:
-  - `basePrompt.ts`: Strict GUIDED LESSON MODE with mandatory correction flow, lesson boundaries, and "tutor first" approach
-  - `lessonPrompts.ts`: 10 lesson-specific prompts with allowed vocabulary, structures, practice questions, and restrictions
-  - `promptManager.ts`: Composes final prompt from BASE_PROMPT + LESSON_PROMPT[currentLesson]
-  - All AI endpoints (voice, text, chat) use the same strict prompt system
+  - `basePrompt.ts`: Short generic base prompt (tutor role, language rules, turn-taking)
+  - `lessonPrompts.ts`: 10 lesson-specific prompts (lessons 2-10) with allowed vocabulary and restrictions
+  - `lesson1Steps.ts`: **Step-based prompts for Lesson 1** with client-controlled state machine:
+    - `LESSON_1_MASTER_PROMPT`: Global rules for Lesson 1 (no question flow)
+    - 5 step prompts: `NAME`, `FROM`, `LIVE`, `WORK`, `LIKE`, `DONE`
+    - Each step contains exact question, valid/invalid/incorrect behavior
+    - Client advances steps after correct answers
+  - `promptManager.ts`: Exports functions for all prompt types
   - Temperature set to 0.3 for strict instruction following
   - Endpoint accepts `?lesson=N` parameter (1-10), defaults to lesson 1
 - **Authentication-Gated Content**: All course content requires account creation, with unauthenticated users redirected to `/auth`.
