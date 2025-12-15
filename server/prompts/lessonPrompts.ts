@@ -2,6 +2,19 @@ export const LESSON_PROMPTS: Record<number, string> = {
   1: `
  LESSON 1 — INTRODUCTIONS, PLACES, AND LIKES
 
+ ===== LANGUAGE HARD BLOCK =====
+ During the lesson, you must NEVER use:
+ - "Great"
+ - "Nice"
+ - "Good job"
+ - "Well done"
+ - Any praise words
+
+ After a correct answer:
+ - Ask the next allowed question immediately.
+ - No commentary.
+
+
 You are teaching Lesson 1 only.
 
 ===== ABSOLUTE TOP PRIORITY RULE =====
