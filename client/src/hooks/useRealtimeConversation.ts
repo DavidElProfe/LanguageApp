@@ -289,30 +289,8 @@ export function useRealtimeConversation(
 
       isStepBasedRef.current = false;
 
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-        ],
-      });
+      const pc = new RTCPeerConnection();
       pcRef.current = pc;
-
-      // Monitor ICE connection state changes
-      pc.oniceconnectionstatechange = () => {
-        console.log("ICE connection state changed:", pc.iceConnectionState);
-      };
-      
-      pc.onicegatheringstatechange = () => {
-        console.log("ICE gathering state changed:", pc.iceGatheringState);
-      };
-      
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          console.log("ICE candidate found:", event.candidate.type, event.candidate.address);
-        } else {
-          console.log("ICE candidate gathering complete");
-        }
-      };
 
       const audioEl = document.createElement("audio");
       audioEl.autoplay = true;
@@ -320,26 +298,7 @@ export function useRealtimeConversation(
       audioRef.current = audioEl;
 
       pc.ontrack = (e) => {
-        console.log("Audio track received from OpenAI");
-        console.log("Stream tracks:", e.streams[0]?.getTracks().length);
         audioEl.srcObject = e.streams[0];
-        audioEl.volume = 1.0;
-        audioEl.muted = false;
-        
-        const playPromise = audioEl.play();
-        if (playPromise !== undefined) {
-          playPromise
-            .then(() => console.log("Audio playing successfully"))
-            .catch(err => {
-              console.error("Audio play error:", err.name, err.message);
-              // Try unmuting and playing again
-              audioEl.muted = true;
-              audioEl.play().then(() => {
-                audioEl.muted = false;
-                console.log("Audio playing after unmute workaround");
-              }).catch(e2 => console.error("Second play attempt failed:", e2));
-            });
-        }
       };
 
       const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -489,26 +448,6 @@ export function useRealtimeConversation(
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // Wait for ICE gathering to complete
-      await new Promise<void>((resolve) => {
-        if (pc.iceGatheringState === "complete") {
-          resolve();
-        } else {
-          const checkState = () => {
-            if (pc.iceGatheringState === "complete") {
-              pc.removeEventListener("icegatheringstatechange", checkState);
-              resolve();
-            }
-          };
-          pc.addEventListener("icegatheringstatechange", checkState);
-          // Timeout after 5 seconds
-          setTimeout(() => resolve(), 5000);
-        }
-      });
-
-      console.log("ICE gathering complete, sending SDP to OpenAI");
-      console.log("ICE connection state:", pc.iceConnectionState);
-
       const sdpRes = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
         {
@@ -518,14 +457,12 @@ export function useRealtimeConversation(
             "Content-Type": "application/sdp",
             "OpenAI-Beta": "realtime=v1",
           },
-          body: pc.localDescription?.sdp,
+          body: offer.sdp,
         },
       );
 
       const answer = await sdpRes.text();
       await pc.setRemoteDescription({ type: "answer", sdp: answer });
-      
-      console.log("WebRTC connection established, ICE state:", pc.iceConnectionState);
     } catch (error) {
       console.error(error);
       setErrorMessage("Error al iniciar la conversación");
