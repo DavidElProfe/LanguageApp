@@ -341,6 +341,12 @@ export function useRealtimeConversation(
           // Log all events from OpenAI for debugging
           if (data.type) {
             console.log("OpenAI event:", data.type);
+            if (data.type === "response.done") {
+              console.log("Response done details:", JSON.stringify(data.response?.status_details || data.response?.status || "no details"));
+            }
+            if (data.type === "error") {
+              console.error("OpenAI ERROR:", data.error);
+            }
           }
 
           if (data.type === "conversation.item.input_audio_transcription.completed") {
