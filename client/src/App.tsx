@@ -30,7 +30,7 @@ function Router() {
     <Switch>
       <Route path="/">
         <ProtectedRoute>
-          <SimpleMode />
+          <ChatPartner />
         </ProtectedRoute>
       </Route>
       <Route path="/auth" component={Auth} />

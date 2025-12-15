@@ -279,19 +279,13 @@ export function useRealtimeConversation(
       setCurrentStep("NAME");
       currentStepRef.current = "NAME";
 
-      const tokenRes = await fetch(`/api/assistant/realtime-token?lesson=${lessonRef.current}`);
+      const tokenRes = await fetch(`/api/assistant/simple-session`);
       if (!tokenRes.ok) throw new Error("No se pudo obtener el token");
 
       const tokenData = await tokenRes.json();
-      const { token, lesson: serverLesson, fullInstructions, isStepBased, currentStep: serverStep } = tokenData;
+      const { token, fullInstructions } = tokenData;
 
-      if (serverLesson) setConfirmedLesson(serverLesson);
-      isStepBasedRef.current = isStepBased || false;
-      
-      if (serverStep) {
-        setCurrentStep(serverStep);
-        currentStepRef.current = serverStep;
-      }
+      isStepBasedRef.current = false;
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
@@ -314,46 +308,16 @@ export function useRealtimeConversation(
       dc.addEventListener("open", () => {
         setConnectionState("active");
         
-        if (isStepBasedRef.current && tokenData.masterPrompt && tokenData.stepPrompt) {
-          dc.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              type: "message",
-              role: "assistant",
-              content: [{ type: "input_text", text: tokenData.masterPrompt }]
-            }
-          }));
-          
-          dc.send(JSON.stringify({
-            type: "conversation.item.create",
-            item: {
-              type: "message",
-              role: "assistant",
-              content: [{ type: "input_text", text: tokenData.stepPrompt }]
-            }
-          }));
-          
-          stepInjectedRef.current = true;
-          canModelSpeakRef.current = true;
-          
-          setTimeout(() => {
-            if (stepInjectedRef.current && currentStepRef.current !== "DONE") {
-              dc.send(JSON.stringify({ type: "response.create" }));
-              canModelSpeakRef.current = false;
-            }
-          }, 100);
-        } else if (fullInstructions) {
+        if (fullInstructions) {
           dc.send(JSON.stringify({
             type: "session.update",
             session: { instructions: fullInstructions }
           }));
-          
-          canModelSpeakRef.current = true;
-          setTimeout(() => {
-            dc.send(JSON.stringify({ type: "response.create" }));
-            canModelSpeakRef.current = false;
-          }, 100);
         }
+        
+        setTimeout(() => {
+          dc.send(JSON.stringify({ type: "response.create" }));
+        }, 100);
       });
 
       dc.addEventListener("message", (event) => {
