@@ -32,6 +32,12 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **Simplified Progressive Learning Flow**: Streamlined UI with a clear progression (Video → Flashcards → AI Chat → Next Topic Video).
 - **AI Voice Conversation Feature**: Real-time WebRTC voice practice using OpenAI Realtime API, including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Session usage time is tracked in the `ai_sessions` table (started_at, ended_at). This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
 - **AI Text Chat Feature**: Text-based alternative to voice chat using OpenAI Chat Completions API (gpt-4o). Uses the exact same lesson-based prompt system as voice chat. Available at `/text-chat` route. Useful for testing without audio or in public places.
+- **Simple Mode (MVP)**: Parallel conversation mode at `/simple` route that bypasses step-based control. Uses a single self-contained prompt (`server/prompts/simpleConversationPrompt.ts`) with 52 ordered questions. The model runs the full conversation autonomously with:
+  - Questions in English, corrections in Spanish
+  - No step injection or client-side flow control
+  - Automatic recap at the end with feedback in Spanish
+  - Endpoint: `/api/assistant/simple-session`
+  - Hook: `useSimpleConversation.ts`
 - **Lesson-Based Prompt System**: Unified modular prompt architecture in `server/prompts/` with:
   - `basePrompt.ts`: Short generic base prompt (tutor role, language rules, turn-taking)
   - `lessonPrompts.ts`: 10 lesson-specific prompts (lessons 2-10) with allowed vocabulary and restrictions
