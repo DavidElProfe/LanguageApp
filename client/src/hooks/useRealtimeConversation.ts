@@ -230,7 +230,7 @@ export function useRealtimeConversation(
       if (!tokenRes.ok) throw new Error("No se pudo obtener el token");
 
       const tokenData = await tokenRes.json();
-      const { token, lesson: serverLesson } = tokenData;
+      const { token, lesson: serverLesson, lessonPrompt } = tokenData;
 
       if (serverLesson) setConfirmedLesson(serverLesson);
 
@@ -254,6 +254,19 @@ export function useRealtimeConversation(
 
       dc.addEventListener("open", () => {
         setConnectionState("active");
+        
+        // Inject lesson prompt as separate instruction message BEFORE first response
+        if (lessonPrompt) {
+          dc.send(JSON.stringify({
+            type: "conversation.item.create",
+            item: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: `LESSON INSTRUCTIONS:\n${lessonPrompt}` }]
+            }
+          }));
+        }
+        
         dc.send(JSON.stringify({ type: "response.create" }));
       });
 

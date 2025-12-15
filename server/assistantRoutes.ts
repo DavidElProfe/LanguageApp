@@ -1,6 +1,6 @@
 import { Router } from "express";
 import OpenAI from "openai";
-import { getSystemPrompt, validateLesson, TOTAL_LESSONS } from "./prompts/promptManager";
+import { getBasePrompt, getLessonPrompt, validateLesson, TOTAL_LESSONS } from "./prompts/promptManager";
 
 export const assistantRouter = Router();
 
@@ -20,14 +20,15 @@ assistantRouter.get("/realtime-token", async (req, res) => {
       }
     }
     
-    const instructions = getSystemPrompt(lessonNumber);
+    const baseInstructions = getBasePrompt();
+    const lessonPrompt = getLessonPrompt(lessonNumber);
     
     console.log(`Creating realtime session for Lesson ${lessonNumber}`);
 
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17",
       voice: "alloy",
-      instructions: instructions,
+      instructions: baseInstructions,
       modalities: ["text", "audio"],
       turn_detection: {
         type: "server_vad",
@@ -44,6 +45,7 @@ assistantRouter.get("/realtime-token", async (req, res) => {
     res.json({
       token: response.client_secret.value,
       lesson: lessonNumber,
+      lessonPrompt: lessonPrompt,
       totalLessons: TOTAL_LESSONS,
     });
   } catch (error: any) {
@@ -76,10 +78,12 @@ assistantRouter.post("/text-chat", async (req, res) => {
       }
     }
     
-    const systemPrompt = getSystemPrompt(lessonNumber);
+    const basePrompt = getBasePrompt();
+    const lessonPrompt = getLessonPrompt(lessonNumber);
     
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: basePrompt },
+      { role: "assistant", content: lessonPrompt },
     ];
     
     if (history && Array.isArray(history)) {
