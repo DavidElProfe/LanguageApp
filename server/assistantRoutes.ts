@@ -1,6 +1,14 @@
 import { Router } from "express";
 import OpenAI from "openai";
-import { getBasePrompt, getLessonPrompt, validateLesson, TOTAL_LESSONS } from "./prompts/promptManager";
+import { 
+  getBasePrompt, 
+  getLessonPrompt, 
+  validateLesson, 
+  TOTAL_LESSONS,
+  getLesson1MasterPrompt,
+  getLesson1Step,
+  type Lesson1Step
+} from "./prompts/promptManager";
 
 export const assistantRouter = Router();
 
@@ -11,6 +19,7 @@ const openai = new OpenAI({
 assistantRouter.get("/realtime-token", async (req, res) => {
   try {
     const lessonParam = req.query.lesson;
+    const stepParam = req.query.step as Lesson1Step | undefined;
     let lessonNumber = 1;
     
     if (lessonParam) {
@@ -21,10 +30,24 @@ assistantRouter.get("/realtime-token", async (req, res) => {
     }
     
     const basePrompt = getBasePrompt();
-    const lessonPrompt = getLessonPrompt(lessonNumber);
-    const fullInstructions = basePrompt + "\n\n" + lessonPrompt;
     
-    console.log(`Creating realtime session for Lesson ${lessonNumber}`);
+    let fullInstructions: string;
+    let isStepBased = false;
+    let initialStep: Lesson1Step = "NAME";
+    
+    if (lessonNumber === 1) {
+      isStepBased = true;
+      const masterPrompt = getLesson1MasterPrompt();
+      const step = stepParam || "NAME";
+      initialStep = step;
+      const stepPrompt = getLesson1Step(step);
+      fullInstructions = basePrompt + "\n\n" + masterPrompt + "\n\n" + stepPrompt;
+      console.log(`Creating realtime session for Lesson 1, Step: ${step}`);
+    } else {
+      const lessonPrompt = getLessonPrompt(lessonNumber);
+      fullInstructions = basePrompt + "\n\n" + lessonPrompt;
+      console.log(`Creating realtime session for Lesson ${lessonNumber}`);
+    }
 
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17",
@@ -48,6 +71,8 @@ assistantRouter.get("/realtime-token", async (req, res) => {
       lesson: lessonNumber,
       fullInstructions: fullInstructions,
       totalLessons: TOTAL_LESSONS,
+      isStepBased: isStepBased,
+      currentStep: isStepBased ? initialStep : null,
     });
   } catch (error: any) {
     console.error("Error creating realtime session:", error);
@@ -56,6 +81,16 @@ assistantRouter.get("/realtime-token", async (req, res) => {
       message: error.message,
     });
   }
+});
+
+assistantRouter.get("/lesson1-step", (req, res) => {
+  const stepParam = req.query.step as Lesson1Step;
+  if (!stepParam) {
+    return res.status(400).json({ error: "Step parameter required" });
+  }
+  
+  const stepPrompt = getLesson1Step(stepParam);
+  res.json({ step: stepParam, prompt: stepPrompt });
 });
 
 interface TextChatMessage {

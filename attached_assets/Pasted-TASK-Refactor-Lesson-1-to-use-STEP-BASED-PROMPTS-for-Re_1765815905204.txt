@@ -1,0 +1,109 @@
+TASK: Refactor Lesson 1 to use STEP-BASED PROMPTS for Realtime voice stability.
+
+CONTEXT:
+We are using OpenAI Realtime API (gpt-4o-realtime-preview-2024-12-17).
+Long system prompts degrade obedience in Realtime.
+Lesson 1 is already well-designed, but still suffers from:
+- Step skipping
+- Follow-up questions
+- Social language leakage
+- Flow decisions made by the model instead of the client
+
+IMPORTANT:
+This refactor applies ONLY to Lesson 1.
+Do NOT modify other lessons.
+
+GOAL:
+Split Lesson 1 into SMALL, STEP-SCOPED PROMPTS.
+Each step controls ONLY one question and its expected answers.
+The client controls progression between steps.
+
+ARCHITECTURE TO IMPLEMENT:
+
+1) BASE PROMPT (UNCHANGED)
+- Keep the short BASE_PROMPT as-is
+- Do NOT add lesson logic to BASE
+
+2) LESSON 1 MASTER PROMPT
+- Keep the existing Lesson 1 rules (invalid input, voice exceptions, language blocks)
+- This prompt defines GLOBAL constraints for Lesson 1
+- Inject it ONCE at session start as an assistant instruction
+- Do NOT include question flow here
+
+3) LESSON 1 STEPS (NEW)
+Create a new structure for Lesson 1 steps.
+Each step is a SMALL prompt with ONE responsibility.
+
+Create exactly these steps:
+
+STEP_1_NAME
+STEP_2_FROM
+STEP_3_LIVE
+STEP_4_WORK
+STEP_5_LIKE
+
+Each STEP prompt MUST contain:
+- The EXACT question to ask
+- What counts as VALID input
+- What counts as INCORRECT input
+- What counts as INVALID input
+- The exact correction behavior
+- NO social language
+- NO praise
+- NO follow-up questions
+
+Example format (conceptual):
+
+STEP_NAME:
+- Ask exactly: "What is your name?"
+- Valid answers:
+  - "My name is ___"
+  - Single word name (voice)
+- Incorrect:
+  - Missing verb ("My name Rocco")
+- Invalid:
+  - Anything else
+- Behavior:
+  - INVALID → fixed clarification sentence
+  - INCORRECT → model + repeat
+  - CORRECT → stop and wait for next step trigger
+
+4) CLIENT STATE MACHINE (MINIMAL)
+- Add a simple state for Lesson 1:
+  - currentStep = NAME | FROM | LIVE | WORK | LIKE
+- Only advance the step AFTER a correct answer
+- Never allow the model to choose the next step
+
+5) PROMPT INJECTION ORDER (MANDATORY)
+For Lesson 1 sessions ONLY:
+
+1. system → BASE_PROMPT
+2. assistant → LESSON_1_MASTER_PROMPT
+3. assistant → STEP_PROMPT (current step)
+4. user → user input
+5. assistant → response
+
+When advancing steps:
+- Inject ONLY the next STEP prompt
+- Do NOT re-send BASE or LESSON master prompt
+
+6) SESSION RECAP (UNCHANGED)
+- Keep recap controlled ONLY by END_SESSION_RECAP
+- Steps must NEVER trigger recap
+
+STRICT RULES:
+- Do NOT refactor other lessons
+- Do NOT generalize step logic yet
+- Do NOT remove existing Lesson 1 rules
+- Do NOT change wording unless required for step isolation
+- Do NOT add new pedagogy
+
+OUTPUT REQUIRED:
+- New step prompt definitions for Lesson 1
+- Minimal client-side state changes
+- Confirmation that this applies ONLY to Lesson 1
+- No explanations or suggestions beyond the implementation
+
+RATIONALE:
+This step-based approach reduces cognitive load on the Realtime model
+and prevents it from making flow decisions.
