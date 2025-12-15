@@ -297,6 +297,23 @@ export function useRealtimeConversation(
       });
       pcRef.current = pc;
 
+      // Monitor ICE connection state changes
+      pc.oniceconnectionstatechange = () => {
+        console.log("ICE connection state changed:", pc.iceConnectionState);
+      };
+      
+      pc.onicegatheringstatechange = () => {
+        console.log("ICE gathering state changed:", pc.iceGatheringState);
+      };
+      
+      pc.onicecandidate = (event) => {
+        if (event.candidate) {
+          console.log("ICE candidate found:", event.candidate.type, event.candidate.address);
+        } else {
+          console.log("ICE candidate gathering complete");
+        }
+      };
+
       const audioEl = document.createElement("audio");
       audioEl.autoplay = true;
       document.body.appendChild(audioEl);
