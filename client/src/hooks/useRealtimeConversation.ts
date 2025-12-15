@@ -102,6 +102,8 @@ export function useRealtimeConversation(
   const currentStepRef = useRef<Lesson1Step>("NAME");
   const isStepBasedRef = useRef<boolean>(false);
   const stepAdvancePendingRef = useRef<boolean>(false);
+  const stepInjectedRef = useRef<boolean>(false);
+  const canModelSpeakRef = useRef<boolean>(false);
 
   useEffect(() => {
     currentStepRef.current = currentStep;
@@ -166,6 +168,8 @@ export function useRealtimeConversation(
       setCurrentStep("DONE");
       currentStepRef.current = "DONE";
       stepAdvancePendingRef.current = false;
+      stepInjectedRef.current = false;
+      canModelSpeakRef.current = false;
       return;
     }
 
@@ -182,9 +186,15 @@ export function useRealtimeConversation(
         }
       }));
       
+      stepInjectedRef.current = true;
+      canModelSpeakRef.current = true;
+      
       await new Promise(resolve => setTimeout(resolve, 100));
       
-      dc.send(JSON.stringify({ type: "response.create" }));
+      if (stepInjectedRef.current && currentStepRef.current !== "DONE") {
+        dc.send(JSON.stringify({ type: "response.create" }));
+        canModelSpeakRef.current = false;
+      }
       
       setCurrentStep(nextStep);
       currentStepRef.current = nextStep;
@@ -228,6 +238,8 @@ export function useRealtimeConversation(
     currentStepRef.current = "NAME";
     isStepBasedRef.current = false;
     stepAdvancePendingRef.current = false;
+    stepInjectedRef.current = false;
+    canModelSpeakRef.current = false;
 
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
   };
@@ -321,8 +333,14 @@ export function useRealtimeConversation(
             }
           }));
           
+          stepInjectedRef.current = true;
+          canModelSpeakRef.current = true;
+          
           setTimeout(() => {
-            dc.send(JSON.stringify({ type: "response.create" }));
+            if (stepInjectedRef.current && currentStepRef.current !== "DONE") {
+              dc.send(JSON.stringify({ type: "response.create" }));
+              canModelSpeakRef.current = false;
+            }
           }, 100);
         } else if (fullInstructions) {
           dc.send(JSON.stringify({
@@ -330,11 +348,11 @@ export function useRealtimeConversation(
             session: { instructions: fullInstructions }
           }));
           
+          canModelSpeakRef.current = true;
           setTimeout(() => {
             dc.send(JSON.stringify({ type: "response.create" }));
+            canModelSpeakRef.current = false;
           }, 100);
-        } else {
-          dc.send(JSON.stringify({ type: "response.create" }));
         }
       });
 
