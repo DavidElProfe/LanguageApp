@@ -233,12 +233,21 @@ export function useRealtimeConversation(
             }
           }
 
+          // 🎯 Recap: esperar response.done para cerrar (cuando el audio terminó)
+          if (data.type === "response.done" && isRecapRequestedRef.current && recapResponseSeenRef.current) {
+            console.log("📋 Audio del recap terminó, cerrando sesión...");
+            setTimeout(() => {
+              stopConversation();
+            }, 500);
+            return;
+          }
+
           // 🤖 Respuesta final del asistente
           if (data.type === "response.audio_transcript.done") {
             const assistantText = data.transcript?.trim();
             if (!assistantText) return;
 
-            // 👉 If recap was requested, auto-stop after next response
+            // 👉 If recap was requested, save text but DON'T stop yet (wait for response.done)
             if (isRecapRequestedRef.current && !recapResponseSeenRef.current) {
               recapResponseSeenRef.current = true;
               setMessages((prev) => [
@@ -251,11 +260,7 @@ export function useRealtimeConversation(
                 },
               ]);
               saveMessageToBackend("assistant", assistantText);
-              console.log("📋 Recap completed");
-              // Auto-stop after recap response
-              setTimeout(() => {
-                stopConversation();
-              }, 1500);
+              console.log("📋 Recap texto recibido, esperando que termine el audio...");
               return;
             }
 
