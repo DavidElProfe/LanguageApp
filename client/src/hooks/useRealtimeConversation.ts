@@ -2,11 +2,48 @@ import { useState, useRef, useEffect } from "react";
 
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
 
+type ExpectedAnswerType = "NAME" | "FROM" | "LIVE" | "WORK" | "LIKE" | "ANY";
+
 export interface ConversationMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
   timestamp: number;
+}
+
+const COUNTRIES = ["argentina", "brazil", "mexico", "spain", "usa", "united states", "canada", "france", "germany", "italy", "japan", "china", "india", "australia", "uk", "england", "colombia", "chile", "peru", "venezuela"];
+const CITIES = ["buenos aires", "new york", "madrid", "paris", "london", "tokyo", "beijing", "sydney", "toronto", "berlin", "rome", "barcelona", "miami", "los angeles", "chicago"];
+
+function validateInputForLesson1(transcript: string, expected: ExpectedAnswerType): boolean {
+  const t = transcript.toLowerCase().trim();
+  if (!t || t.length < 2) return false;
+  
+  switch (expected) {
+    case "NAME":
+      return t.includes("name is") || t.includes("i am") || t.includes("i'm") || (t.split(/\s+/).length <= 3);
+    case "FROM":
+      return t.includes("from") || t.includes("i am from") || COUNTRIES.some(c => t.includes(c));
+    case "LIVE":
+      return t.includes("live") || t.includes("i live") || CITIES.some(c => t.includes(c));
+    case "WORK":
+      return t.includes("work") || t.includes("i work") || t.includes("office") || t.includes("company") || t.includes("home");
+    case "LIKE":
+      return t.includes("like") || t.includes("i like") || t.includes("don't like") || t.includes("food") || t.includes("music") || t.includes("movies");
+    case "ANY":
+      return true;
+    default:
+      return true;
+  }
+}
+
+function detectExpectedAnswerFromAssistant(text: string): ExpectedAnswerType {
+  const t = text.toLowerCase();
+  if (t.includes("what is your name") || t.includes("your name")) return "NAME";
+  if (t.includes("where are you from") || t.includes("are you from")) return "FROM";
+  if (t.includes("where do you live") || t.includes("do you live")) return "LIVE";
+  if (t.includes("where do you work") || t.includes("do you work")) return "WORK";
+  if (t.includes("what do you like") || t.includes("do you like")) return "LIKE";
+  return "ANY";
 }
 
 interface UseRealtimeConversationOptions {
@@ -49,6 +86,10 @@ export function useRealtimeConversation(
   // 👉 recap flow control
   const isRecapRequestedRef = useRef<boolean>(false);
   const recapCloseScheduledRef = useRef<boolean>(false);
+  
+  // 👉 Voice Input Gate: track expected answer type
+  const expectedAnswerRef = useRef<ExpectedAnswerType>("NAME");
+  const inputRejectedRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (
@@ -138,6 +179,8 @@ export function useRealtimeConversation(
     lastUserTranscriptRef.current = null;
     isRecapRequestedRef.current = false;
     recapCloseScheduledRef.current = false;
+    expectedAnswerRef.current = "NAME";
+    inputRejectedRef.current = false;
 
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
   };
@@ -218,8 +261,7 @@ export function useRealtimeConversation(
         try {
           const data = JSON.parse(event.data);
 
-          // 🎤 Usuario habla → Whisper (guardamos pero NO mostramos)
-          // 👉 Skip user input if recap is requested
+          // 🎤 Usuario habla → Whisper transcription
           if (
             data.type ===
             "conversation.item.input_audio_transcription.completed"
@@ -228,9 +270,33 @@ export function useRealtimeConversation(
               return;
             }
             const text = data.transcript?.trim();
-            if (text) {
-              lastUserTranscriptRef.current = text;
+            if (!text) return;
+            
+            // 🚧 Voice Input Gate: validate before allowing model to respond
+            const isValid = validateInputForLesson1(text, expectedAnswerRef.current);
+            
+            if (!isValid) {
+              inputRejectedRef.current = true;
+              lastUserTranscriptRef.current = null;
+              
+              // Cancel pending model response and send fixed clarification
+              try {
+                dc.send(JSON.stringify({ type: "response.cancel" }));
+                dc.send(JSON.stringify({
+                  type: "conversation.item.create",
+                  item: {
+                    type: "message",
+                    role: "assistant",
+                    content: [{ type: "input_text", text: "I didn't understand. Can you say it again?" }]
+                  }
+                }));
+                dc.send(JSON.stringify({ type: "response.create" }));
+              } catch {}
+              return;
             }
+            
+            inputRejectedRef.current = false;
+            lastUserTranscriptRef.current = text;
           }
 
           // 🤖 Respuesta final del asistente
@@ -255,14 +321,15 @@ export function useRealtimeConversation(
               // Estimar duración: ~2.5 palabras/segundo = 400ms por palabra + 2s buffer
               const wordCount = assistantText.split(/\s+/).length;
               const estimatedMs = Math.max(wordCount * 400 + 2000, 5000);
-              console.log(`📋 Recap: ${wordCount} palabras, esperando ${estimatedMs}ms para reproducir audio...`);
               
               setTimeout(() => {
-                console.log("📋 Cerrando sesión después del recap");
                 stopConversation();
               }, estimatedMs);
               return;
             }
+
+            // Update expected answer based on assistant's question
+            expectedAnswerRef.current = detectExpectedAnswerFromAssistant(assistantText);
 
             const userText = lastUserTranscriptRef.current;
 

@@ -1,0 +1,104 @@
+TASK: Fix the VOICE chat behavior without modifying lesson prompts.
+
+CONTEXT:
+We use OpenAI Realtime API (WebRTC + Whisper transcription).
+User audio is transcribed before being shown, and the model reacts to unstable / partial transcripts.
+Lesson 1 prompt is already correct and MUST NOT be changed.
+
+CURRENT PROBLEM:
+In voice mode, the assistant violates lesson rules because:
+- Whisper produces partial / social / noisy transcripts
+- These transcripts are sent directly to the model
+- The model tries to be helpful and breaks lesson constraints
+This causes:
+- Invalid input being treated as incorrect
+- Question order breaking
+- Social phrases ("Great!", "Well done!")
+- Unexpected recap messages
+
+IMPORTANT:
+This is NOT a prompt problem.
+This is an INPUT STABILITY problem in voice mode.
+
+GOAL:
+Add a VOICE INPUT GATE before sending user input to the model.
+Only confirmed, structured answers should reach the LLM.
+
+STRICT RULES:
+- Do NOT modify any lesson prompt
+- Do NOT modify basePrompt or lessonPrompt text
+- Do NOT add new AI behavior
+- Do NOT loosen lesson rules
+- Do NOT change conversation pedagogy
+- Do NOT change OpenAI model or parameters
+- ONLY adjust client-side voice handling logic
+
+FILES INVOLVED:
+- client/src/hooks/useRealtimeConversation.ts
+
+REQUIRED IMPLEMENTATION:
+
+1) Track expected answer type
+Add a local state or ref:
+- expectedAnswerType
+Possible values (enum):
+- NAME
+- FROM
+- LIVE
+- WORK
+- LIKE
+
+Update this state ONLY when the assistant successfully advances to the next question.
+
+2) Add a VOICE INPUT GATE
+Before sending any transcribed user input to the model:
+
+- Inspect the transcript text
+- Validate it against expectedAnswerType using SIMPLE heuristics:
+  - NAME: any single word OR "my name is ___"
+  - FROM: contains "from" OR a country name
+  - LIVE: contains "live" OR a city/place
+  - WORK: contains "work" OR a workplace
+  - LIKE: contains "like" OR a food / simple activity
+
+DO NOT over-engineer. Regex or includes() checks are enough.
+
+3) If input DOES NOT match expectedAnswerType:
+- DO NOT send it to the model
+- DO NOT advance lesson state
+- Immediately emit the fixed response:
+  "I didn’t understand. Can you say it again?"
+- Continue listening for audio
+
+4) If input DOES match expectedAnswerType:
+- Send it to the model as normal
+- Allow the model to respond
+- Update expectedAnswerType ONLY after assistant response confirms progression
+
+5) Session recap handling
+If the system closes the voice session:
+- Allow assistant final feedback ONLY if explicitly requested by system
+- Prevent auto-generated recap text from base/system prompts
+- Do NOT inject recap text from client side
+
+IMPORTANT BEHAVIORAL GUARANTEES:
+- Invalid voice transcripts NEVER reach the LLM
+- The LLM only sees clean, intentional student answers
+- Lesson prompts remain authoritative
+- Voice UX becomes stable and deterministic
+
+OUTPUT REQUIRED:
+- Implement the input gate in useRealtimeConversation.ts
+- Minimal code changes
+- No refactors
+- No prompt edits
+- No extra logging
+- No UI changes
+
+DO NOT:
+- Suggest prompt changes
+- Suggest pedagogical changes
+- Add retries or confirmations
+- Add new UX flows
+
+This is a surgical fix.
