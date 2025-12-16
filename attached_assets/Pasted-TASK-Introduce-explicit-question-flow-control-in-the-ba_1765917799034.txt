@@ -1,0 +1,48 @@
+TASK: Introduce explicit question flow control in the backend with MINIMAL changes.
+
+CONTEXT:
+We have a voice-based AI conversation with a fixed list of 52 questions.
+Currently, the AI model decides which question comes next based on memory of the conversation.
+This causes topic jumps and makes testing impossible.
+
+IMPORTANT:
+- The pedagogical prompt (SIMPLE_CONVERSATION_PROMPT) is already correct and MUST NOT be rewritten.
+- Do NOT change question wording, order, or teaching rules.
+- Do NOT refactor frontend logic.
+- Do NOT redesign the architecture.
+- Do NOT add complex state machines.
+- Make the SMALLEST POSSIBLE backend change.
+
+GOAL:
+Move control of the question order from the AI model to the backend.
+
+REQUIRED BEHAVIOR:
+1. The backend must track a single integer per session:
+   - currentQuestionIndex (starting at 1 by default).
+2. The backend is the ONLY source of truth for which question is currently active.
+3. The AI model must no longer decide which question comes next.
+4. The backend sends ONLY the current question text to the model.
+5. The backend advances currentQuestionIndex ONLY when the student's answer is accepted as correct and complete.
+6. If the answer is incorrect or incomplete:
+   - the backend keeps the same question index
+   - the SAME question is asked again
+7. The question index MUST advance at most once per student turn.
+
+TESTING REQUIREMENT:
+- Allow manually setting currentQuestionIndex at session start (for development/testing only).
+- This must not affect production behavior for students.
+
+STRICT CONSTRAINTS:
+- Do NOT rewrite the 52 questions.
+- Do NOT move questions into the prompt.
+- Do NOT introduce new prompts or modes.
+- Do NOT change voice, STT, or realtime handling.
+- Do NOT touch UI or routing.
+- Do NOT auto-skip questions.
+
+DELIVERABLE:
+- Minimal backend changes implementing the above.
+- A short explanation of:
+  a) where currentQuestionIndex is stored
+  b) when it increments
+  c) why this fixes topic jumping without changing pedagogy
