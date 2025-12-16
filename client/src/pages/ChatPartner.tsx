@@ -15,16 +15,16 @@ import { useRealtimeConversation } from "@/hooks/useRealtimeConversation";
 import ConversationTranscript from "@/components/ConversationTranscript";
 
 const LESSON_OPTIONS = [
-  { value: 1, label: "Lección 1: Presentaciones y conversación básica" },
-  { value: 2, label: "Lección 2: Describir cosas y preferencias" },
-  { value: 3, label: "Lección 3: Comida, compras y números" },
-  { value: 4, label: "Lección 4: Actividades diarias (yo/tú)" },
-  { value: 5, label: "Lección 5: Presente simple (él/ella)" },
-  { value: 6, label: "Lección 6: Restaurantes" },
-  { value: 7, label: "Lección 7: Hoteles y viajes" },
-  { value: 8, label: "Lección 8: Preferencias y estilo de vida" },
-  { value: 9, label: "Lección 9: Rutinas y orden temporal" },
-  { value: 10, label: "Lección 10: Verbos comunes y repaso" },
+  { value: 1, label: "Lección 1: Presentaciones y conversación básica", available: true },
+  { value: 2, label: "Lección 2: Describir cosas y preferencias", available: false },
+  { value: 3, label: "Lección 3: Comida, compras y números", available: false },
+  { value: 4, label: "Lección 4: Actividades diarias (yo/tú)", available: false },
+  { value: 5, label: "Lección 5: Presente simple (él/ella)", available: false },
+  { value: 6, label: "Lección 6: Restaurantes", available: false },
+  { value: 7, label: "Lección 7: Hoteles y viajes", available: false },
+  { value: 8, label: "Lección 8: Preferencias y estilo de vida", available: false },
+  { value: 9, label: "Lección 9: Rutinas y orden temporal", available: false },
+  { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
 ];
 
 export default function ChatPartner() {
@@ -111,8 +111,13 @@ export default function ChatPartner() {
                   </SelectTrigger>
                   <SelectContent>
                     {LESSON_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value.toString()}>
-                        {option.label}
+                      <SelectItem 
+                        key={option.value} 
+                        value={option.value.toString()}
+                        disabled={!option.available}
+                        className={!option.available ? "opacity-50" : ""}
+                      >
+                        {option.label}{!option.available && " — Próximamente"}
                       </SelectItem>
                     ))}
                   </SelectContent>
