@@ -37,15 +37,8 @@ export default function Dashboard() {
   });
 
   const handleContinueLearning = () => {
-    if (nextTopic?.navigationPath) {
-      setLocation(nextTopic.navigationPath);
-    } else if (nextTopic?.topicId) {
-      // Fallback to topic page if no navigationPath
-      setLocation(`/topic/${nextTopic.topicId}`);
-    } else {
-      // Fallback to courses page if no topic found
-      setLocation('/courses');
-    }
+    // Navigate directly to voice chat
+    setLocation('/');
   };
 
   // Show loading state while checking authentication
