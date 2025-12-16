@@ -10,8 +10,54 @@ import {
   type Lesson1Step
 } from "./prompts/promptManager";
 import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/simpleConversationPrompt";
+import { 
+  SIMPLE_CONVERSATION_QUESTIONS, 
+  TOTAL_QUESTIONS, 
+  getQuestionByIndex,
+  findQuestionIndex 
+} from "./prompts/simpleConversationQuestions";
 
 export const assistantRouter = Router();
+
+interface SimpleSessionState {
+  currentQuestionIndex: number;
+  lastAdvancedAt: number;
+  createdAt: number;
+}
+
+const simpleSessionStates = new Map<string, SimpleSessionState>();
+
+function getOrCreateSessionState(sessionId: string, initialIndex: number = 0): SimpleSessionState {
+  if (!simpleSessionStates.has(sessionId)) {
+    const state: SimpleSessionState = {
+      currentQuestionIndex: Math.max(0, Math.min(initialIndex, TOTAL_QUESTIONS)),
+      lastAdvancedAt: 0,
+      createdAt: Date.now(),
+    };
+    simpleSessionStates.set(sessionId, state);
+    console.log(`[SimpleSession] Created session ${sessionId} at question ${state.currentQuestionIndex}`);
+  }
+  return simpleSessionStates.get(sessionId)!;
+}
+
+function generateSilentContext(questionIndex: number): string {
+  if (questionIndex === 0) {
+    return `\n\n[INTERNAL ORIENTATION - DO NOT MENTION THIS TO THE STUDENT]\nYou are about to start the conversation. Begin with question 1: "${getQuestionByIndex(1)}"\nDo not reference question numbers aloud. Simply ask the question naturally.\n[END INTERNAL ORIENTATION]\n`;
+  }
+  return `\n\n[INTERNAL ORIENTATION - DO NOT MENTION THIS TO THE STUDENT]\nYou are currently at question ${questionIndex} of ${TOTAL_QUESTIONS}.\nThe current question is: "${getQuestionByIndex(questionIndex)}"\nDo not reference question numbers aloud. Simply ask the question naturally.\n[END INTERNAL ORIENTATION]\n`;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  const MAX_SESSION_AGE = 2 * 60 * 60 * 1000;
+  const entries = Array.from(simpleSessionStates.entries());
+  for (const [sessionId, state] of entries) {
+    if (now - state.createdAt > MAX_SESSION_AGE) {
+      simpleSessionStates.delete(sessionId);
+      console.log(`[SimpleSession] Cleaned up expired session ${sessionId}`);
+    }
+  }
+}, 15 * 60 * 1000);
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -125,10 +171,27 @@ assistantRouter.get("/simple-session", async (req, res) => {
   try {
     console.log("=== SIMPLE SESSION REQUEST ===");
     
+    const initialQuestionIndexParam = req.query.initialQuestionIndex;
+    let initialQuestionIndex = 0;
+    
+    if (initialQuestionIndexParam) {
+      const parsed = parseInt(initialQuestionIndexParam as string, 10);
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= TOTAL_QUESTIONS) {
+        initialQuestionIndex = parsed;
+        console.log(`[SimpleSession] Starting at custom question index: ${initialQuestionIndex}`);
+      }
+    }
+    
+    const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const sessionState = getOrCreateSessionState(sessionId, initialQuestionIndex);
+    
+    const silentContext = generateSilentContext(sessionState.currentQuestionIndex);
+    const fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
+    
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17",
       voice: "alloy",
-      instructions: SIMPLE_CONVERSATION_PROMPT,
+      instructions: fullInstructions,
       modalities: ["text", "audio"],
       turn_detection: {
         type: "server_vad",
@@ -143,11 +206,15 @@ assistantRouter.get("/simple-session", async (req, res) => {
     });
 
     console.log("OPENAI_RESPONSE_OK - Session created, token length:", response.client_secret?.value?.length);
+    console.log(`[SimpleSession] Session ${sessionId} ready at question ${sessionState.currentQuestionIndex}`);
     
     res.json({
       token: response.client_secret.value,
       mode: "simple",
       instructionsIncluded: true,
+      sessionId: sessionId,
+      currentQuestionIndex: sessionState.currentQuestionIndex,
+      totalQuestions: TOTAL_QUESTIONS,
     });
   } catch (error: any) {
     console.error("=== OPENAI API ERROR ===");
@@ -171,6 +238,80 @@ assistantRouter.get("/simple-session", async (req, res) => {
       openai_error_type: error.type,
     });
   }
+});
+
+assistantRouter.post("/simple-session/:sessionId/process-response", async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { aiTranscript } = req.body;
+    
+    if (!aiTranscript || typeof aiTranscript !== "string") {
+      return res.status(400).json({ error: "aiTranscript is required" });
+    }
+    
+    const sessionState = simpleSessionStates.get(sessionId);
+    if (!sessionState) {
+      console.log(`[SimpleSession] Session ${sessionId} not found, creating new state`);
+      return res.status(404).json({ error: "Session not found" });
+    }
+    
+    const currentIndex = sessionState.currentQuestionIndex;
+    const detectedIndex = findQuestionIndex(aiTranscript);
+    
+    console.log(`[SimpleSession] Processing response for session ${sessionId}`);
+    console.log(`[SimpleSession] Current index: ${currentIndex}, Detected in AI response: ${detectedIndex}`);
+    
+    let advanced = false;
+    let newIndex = currentIndex;
+    
+    const now = Date.now();
+    const timeSinceLastAdvance = now - sessionState.lastAdvancedAt;
+    const MIN_ADVANCE_INTERVAL = 2000;
+    
+    if (detectedIndex !== null && timeSinceLastAdvance >= MIN_ADVANCE_INTERVAL) {
+      if (detectedIndex === currentIndex + 1) {
+        sessionState.currentQuestionIndex = detectedIndex;
+        sessionState.lastAdvancedAt = now;
+        newIndex = detectedIndex;
+        advanced = true;
+        console.log(`[SimpleSession] Advanced to question ${newIndex}`);
+      } else if (detectedIndex === currentIndex) {
+        console.log(`[SimpleSession] AI repeated question ${currentIndex}, not advancing`);
+      } else if (detectedIndex > currentIndex + 1) {
+        console.log(`[SimpleSession] WARNING: AI tried to skip to question ${detectedIndex}, staying at ${currentIndex}`);
+      }
+    }
+    
+    res.json({
+      sessionId,
+      previousIndex: currentIndex,
+      currentIndex: newIndex,
+      advanced,
+      detectedQuestionIndex: detectedIndex,
+      currentQuestion: getQuestionByIndex(newIndex),
+      totalQuestions: TOTAL_QUESTIONS,
+    });
+  } catch (error: any) {
+    console.error("[SimpleSession] Error processing response:", error);
+    res.status(500).json({ error: "Failed to process response", message: error.message });
+  }
+});
+
+assistantRouter.get("/simple-session/:sessionId/state", (req, res) => {
+  const { sessionId } = req.params;
+  const sessionState = simpleSessionStates.get(sessionId);
+  
+  if (!sessionState) {
+    return res.status(404).json({ error: "Session not found" });
+  }
+  
+  res.json({
+    sessionId,
+    currentQuestionIndex: sessionState.currentQuestionIndex,
+    currentQuestion: getQuestionByIndex(sessionState.currentQuestionIndex),
+    totalQuestions: TOTAL_QUESTIONS,
+    createdAt: sessionState.createdAt,
+  });
 });
 
 interface TextChatMessage {

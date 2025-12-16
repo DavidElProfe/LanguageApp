@@ -32,12 +32,18 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **Simplified Progressive Learning Flow**: Streamlined UI with a clear progression (Video → Flashcards → AI Chat → Next Topic Video).
 - **AI Voice Conversation Feature**: Real-time WebRTC voice practice using OpenAI Realtime API, including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Session usage time is tracked in the `ai_sessions` table (started_at, ended_at). This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
 - **AI Text Chat Feature**: Text-based alternative to voice chat using OpenAI Chat Completions API (gpt-4o). Uses the exact same lesson-based prompt system as voice chat. Available at `/text-chat` route. Useful for testing without audio or in public places.
-- **Simple Mode (MVP)**: Parallel conversation mode at `/simple` route that bypasses step-based control. Uses a single self-contained prompt (`server/prompts/simpleConversationPrompt.ts`) with 52 ordered questions. The model runs the full conversation autonomously with:
+- **Simple Mode (MVP)**: Voice conversation mode using the ChatPartner component at `/` route. Uses a single self-contained prompt (`server/prompts/simpleConversationPrompt.ts`) with 52 ordered questions. Features explicit backend question flow control with:
   - Questions in English, corrections in Spanish
-  - No step injection or client-side flow control
+  - Backend tracks `currentQuestionIndex` per session in memory (`simpleSessionStates` Map)
+  - Questions extracted to `server/prompts/simpleConversationQuestions.ts` for index-based access
+  - Silent orientation context injected into prompt (AI knows its position without mentioning numbers)
+  - Question advancement detected by comparing AI output with expected next question
   - Automatic recap at the end with feedback in Spanish
-  - Endpoint: `/api/assistant/simple-session`
+  - Endpoint: `/api/assistant/simple-session` (accepts `?initialQuestionIndex=N` for testing)
+  - Process response: `POST /api/assistant/simple-session/:sessionId/process-response`
+  - State query: `GET /api/assistant/simple-session/:sessionId/state`
   - Hook: `useSimpleConversation.ts`
+  - Session cleanup: Expired sessions (>2 hours) are automatically cleaned up
 - **Lesson-Based Prompt System**: Unified modular prompt architecture in `server/prompts/` with:
   - `basePrompt.ts`: Short generic base prompt (tutor role, language rules, turn-taking)
   - `lessonPrompts.ts`: 10 lesson-specific prompts (lessons 2-10) with allowed vocabulary and restrictions

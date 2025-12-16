@@ -27,6 +27,8 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
   const dcRef = useRef<RTCDataChannel | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const simpleSessionIdRef = useRef<string | null>(null);
+  const currentQuestionIndexRef = useRef<number>(0);
 
   useEffect(() => {
     import("@/lib/supabase").then(({ getSupabase }) => {
@@ -58,6 +60,31 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
       });
     } catch (error) {
       console.error("Error saving message:", error);
+    }
+  };
+
+  const processAiResponse = async (aiTranscript: string) => {
+    if (!simpleSessionIdRef.current || !aiTranscript.trim()) return;
+
+    try {
+      const response = await fetch(
+        `/api/assistant/simple-session/${simpleSessionIdRef.current}/process-response`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ aiTranscript }),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.advanced) {
+          console.log(`[SimpleConversation] Advanced to question ${result.currentIndex}`);
+          currentQuestionIndexRef.current = result.currentIndex;
+        }
+      }
+    } catch (error) {
+      console.error("Error processing AI response:", error);
     }
   };
 
@@ -118,6 +145,8 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
     }
 
     sessionIdRef.current = null;
+    simpleSessionIdRef.current = null;
+    currentQuestionIndexRef.current = 0;
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
   };
 
@@ -161,7 +190,13 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
       }
 
       const tokenData = await tokenRes.json();
-      const { token, instructionsIncluded } = tokenData;
+      const { token, instructionsIncluded, sessionId: simpleSessionId, currentQuestionIndex } = tokenData;
+      
+      if (simpleSessionId) {
+        simpleSessionIdRef.current = simpleSessionId;
+        currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
+        console.log(`[SimpleConversation] Backend session ${simpleSessionId} at question ${currentQuestionIndex}`);
+      }
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
@@ -227,6 +262,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
               },
             ]);
             saveMessageToBackend("assistant", text);
+            processAiResponse(text);
           }
 
           if (data.type === "error") {
