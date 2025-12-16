@@ -1,17 +1,17 @@
-import { Link, useLocation } from 'wouter';
-import { GraduationCap, LogOut, Menu } from 'lucide-react';
-import { useState } from 'react';
-import { useLanguage } from '@/contexts/LanguageContext';
-import { useAuth } from '@/contexts/AuthContext';
-import ThemeToggle from './ThemeToggle';
-import { Button } from '@/components/ui/button';
+import { Link, useLocation } from "wouter";
+import { GraduationCap, LogOut, Menu } from "lucide-react";
+import { useState } from "react";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
+import ThemeToggle from "./ThemeToggle";
+import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from '@/components/ui/sheet';
+} from "@/components/ui/sheet";
 
 export default function Navbar() {
   const { t } = useLanguage();
@@ -20,15 +20,14 @@ export default function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
-    { path: '/', label: 'Chat Voz' },
-    { path: '/text-chat', label: 'Chat Texto' },
-    { path: '/courses', label: 'Cursos' },
-    ...(user ? [{ path: '/dashboard', label: t('nav.dashboard') }] : []),
+    { path: "/", label: "Chat Voz" },
+    { path: "/courses", label: "Cursos" },
+    ...(user ? [{ path: "/dashboard", label: t("nav.dashboard") }] : []),
   ];
 
   const handleSignOut = async () => {
     await signOut();
-    setLocation('/');
+    setLocation("/");
   };
 
   const handleNavClick = (path: string) => {
@@ -52,7 +51,7 @@ export default function Navbar() {
             {navItems.map((item) => (
               <Link key={item.path} href={item.path}>
                 <Button
-                  variant={location === item.path ? 'secondary' : 'ghost'}
+                  variant={location === item.path ? "secondary" : "ghost"}
                   data-testid={`link-${item.label.toLowerCase()}`}
                 >
                   {item.label}
@@ -64,13 +63,18 @@ export default function Navbar() {
           <div className="flex items-center gap-2">
             <ThemeToggle />
             {user ? (
-              <Button variant="ghost" size="icon" onClick={handleSignOut} data-testid="button-signout">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleSignOut}
+                data-testid="button-signout"
+              >
                 <LogOut className="h-5 w-5" />
               </Button>
             ) : (
               <Link href="/auth">
                 <Button variant="default" data-testid="button-auth">
-                  {t('nav.signin')}
+                  {t("nav.signin")}
                 </Button>
               </Link>
             )}
@@ -78,7 +82,12 @@ export default function Navbar() {
             {/* Mobile Menu */}
             <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon" className="md:hidden" data-testid="button-mobile-menu">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="md:hidden"
+                  data-testid="button-mobile-menu"
+                >
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
@@ -90,7 +99,7 @@ export default function Navbar() {
                   {navItems.map((item) => (
                     <Button
                       key={item.path}
-                      variant={location === item.path ? 'secondary' : 'ghost'}
+                      variant={location === item.path ? "secondary" : "ghost"}
                       className="justify-start"
                       onClick={() => handleNavClick(item.path)}
                       data-testid={`mobile-link-${item.label.toLowerCase()}`}
