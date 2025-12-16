@@ -1,0 +1,55 @@
+TASK: Refactor OpenAI chat request construction to reduce token usage WITHOUT changing conversation behavior.
+
+CRITICAL CONSTRAINTS (DO NOT VIOLATE):
+- DO NOT modify the content, wording, order, or rules of SIMPLE_CONVERSATION_PROMPT.
+- DO NOT alter the pedagogical flow, question order, corrections, recap, or language behavior.
+- The AI must behave EXACTLY the same from the user's perspective.
+- DO NOT add, remove, or rephrase any questions.
+- DO NOT introduce free conversation.
+- DO NOT change frontend UX or speech behavior.
+- If unsure, preserve existing behavior.
+
+GOAL:
+Ensure the large system prompt (SIMPLE_CONVERSATION_PROMPT) is sent ONLY ONCE per conversation session, not on every turn, to prevent excessive token usage.
+
+REQUIRED CHANGES:
+1. Treat SIMPLE_CONVERSATION_PROMPT as a session-persistent system prompt.
+2. Load and attach SIMPLE_CONVERSATION_PROMPT only when a conversation session is created.
+3. Store a reference to the active system prompt using the existing sessionId (or equivalent session state).
+4. For each subsequent user turn:
+   - DO NOT resend the full SIMPLE_CONVERSATION_PROMPT.
+   - Send ONLY:
+     a) the current question text
+     b) the student's latest answer
+     c) the current question index/number (if already tracked)
+5. Do NOT send full conversation history.
+6. Do NOT duplicate past questions or answers.
+
+API SAFETY REQUIREMENTS:
+- Set max_tokens to a conservative limit (≈80).
+- Keep temperature low (≈0.3).
+- Preserve all existing error handling and fallbacks.
+
+IMPLEMENTATION NOTES:
+- If the system currently reconstructs the full `messages` array on every request, refactor it so:
+  - `system` role message with SIMPLE_CONVERSATION_PROMPT is injected once per session.
+  - Subsequent requests reuse the same system context via session state, cache, or database.
+- If the architecture does not support true in-memory persistence, simulate it safely using session storage without altering behavior.
+
+VERIFICATION REQUIREMENTS:
+- The AI must still:
+  - Ask questions in the same order.
+  - Wait for user responses.
+  - Correct errors in Spanish only when needed.
+  - Reach question 52 and perform the recap exactly as before.
+- The only acceptable difference is reduced token usage.
+
+ABSOLUTELY FORBIDDEN:
+- Changing the prompt text.
+- Splitting or rewriting SIMPLE_CONVERSATION_PROMPT.
+- Introducing summaries, shortcuts, or optimizations that alter logic.
+- Any behavior change visible to the end user.
+
+OUTPUT:
+- Apply minimal, surgical code changes.
+- Provide a brief explanation of what was changed and where.

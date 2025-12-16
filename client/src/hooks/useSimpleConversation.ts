@@ -161,7 +161,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
       }
 
       const tokenData = await tokenRes.json();
-      const { token, fullInstructions } = tokenData;
+      const { token, instructionsIncluded } = tokenData;
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
@@ -184,11 +184,8 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
       dc.addEventListener("open", () => {
         setConnectionState("active");
         
-        if (fullInstructions) {
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: { instructions: fullInstructions }
-          }));
+        if (instructionsIncluded) {
+          console.log("Instructions already in token, skipping session.update");
         }
         
         setTimeout(() => {

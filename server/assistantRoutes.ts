@@ -147,7 +147,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     res.json({
       token: response.client_secret.value,
       mode: "simple",
-      fullInstructions: SIMPLE_CONVERSATION_PROMPT,
+      instructionsIncluded: true,
     });
   } catch (error: any) {
     console.error("=== OPENAI API ERROR ===");

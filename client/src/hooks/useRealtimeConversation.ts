@@ -285,7 +285,7 @@ export function useRealtimeConversation(
       if (!tokenRes.ok) throw new Error("No se pudo obtener el token");
 
       const tokenData = await tokenRes.json();
-      const { token, fullInstructions } = tokenData;
+      const { token, instructionsIncluded } = tokenData;
 
       isStepBasedRef.current = false;
 
@@ -312,12 +312,8 @@ export function useRealtimeConversation(
         console.log("DataChannel OPEN");
         setConnectionState("active");
         
-        if (fullInstructions) {
-          console.log("Sending session.update with instructions");
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: { instructions: fullInstructions }
-          }));
+        if (instructionsIncluded) {
+          console.log("Instructions already in token, skipping session.update");
         }
         
         setTimeout(() => {
