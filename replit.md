@@ -45,7 +45,7 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
   - State query: `GET /api/assistant/simple-session/:sessionId/state`
   - Hook: `useSimpleConversation.ts`
   - Session cleanup: Expired sessions (>2 hours) are automatically cleaned up
-  - **Language Guardrail (P25-P32)**: Backend enforces Spanish-only responses for "What does X mean?" questions. English answers (employee, office, paper, etc.) are rejected with correction instruction. Uses positive matching against known English translations.
+  - **Language Guardrail (P25-P32)**: Frontend enforces Spanish-only responses for "What does X mean?" questions. English answers (employee, office, paper, etc.) are detected client-side and a correction message is shown immediately. Uses positive matching against known English translations. Implemented in `useSimpleConversation.ts`.
 - **Lesson-Based Prompt System**: Unified modular prompt architecture in `server/prompts/` with:
   - `basePrompt.ts`: Short generic base prompt (tutor role, language rules, turn-taking)
   - `lessonPrompts.ts`: 10 lesson-specific prompts (lessons 2-10) with allowed vocabulary and restrictions
