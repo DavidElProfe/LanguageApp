@@ -1,0 +1,53 @@
+TAREA: Agregar un guardrail de idioma enforceado por backend para las preguntas “What does … mean?” (P25–P32) en Simple Mode.
+
+RESTRICCIONES IMPORTANTES (no violar):
+- NO cambiar la lógica de flujo ya implementada (tracking de currentQuestionIndex, detección de avance).
+- NO refactorizar la arquitectura.
+- NO tocar frontend.
+- NO tocar WebRTC / Realtime / STT.
+- NO agregar llamadas nuevas a modelos (“juez”, clasificador, etc.).
+- NO reescribir ni remover SIMPLE_CONVERSATION_PROMPT.
+- Mantener el cambio mínimo y aislado.
+
+PROBLEMA:
+Para las preguntas 25–32 (“What does X mean …”), el estudiante DEBE responder en ESPAÑOL.
+A veces el modelo acepta incorrectamente una respuesta en INGLÉS (por ejemplo “employee”), a pesar de las reglas del prompt.
+Necesitamos enforcement determinístico en backend.
+
+OBJETIVO:
+Cuando el índice de pregunta activo esté entre 25–32, una respuesta en inglés SIEMPRE debe tratarse como incorrecta, aunque el significado sea correcto.
+El backend debe bloquear el avance y forzar que el asistente:
+1) Corrija en español
+2) Diga explícitamente que debe responder en español
+3) Repita la MISMA pregunta en inglés exactamente como está escrita
+
+ALCANCE:
+- Solo aplicar este guardrail a índices 25–32.
+- No cambiar el comportamiento de otras preguntas.
+
+REQUISITOS DE IMPLEMENTACIÓN:
+1) Detectar si currentQuestionIndex está dentro de [25..32].
+2) Detectar si la respuesta del estudiante “parece inglés” con una heurística simple (sin librerías externas):
+   - Si la respuesta contiene solo letras latinas (a-z/A-Z) y espacios, tratarla como INGLÉS.
+   - Si incluye acentos (áéíóúñ) o frases claramente en español, tratarla como NO-inglés.
+   - La heurística solo necesita atrapar bien casos como: “employee”, “office”, “paper”, “director”, “student”, “classroom”.
+3) Si (esPreguntaWhatDoes && respuestaPareceIngles):
+   - Forzar resultado incorrecto.
+   - NO avanzar currentQuestionIndex.
+   - Enviar una instrucción interna al modelo (system/internal context) indicando:
+     - La respuesta es incorrecta porque está en inglés.
+     - El asistente DEBE corregir en español.
+     - El asistente DEBE repetir la misma pregunta exactamente como está escrita en inglés.
+     - El asistente DEBE esperar un nuevo intento del estudiante.
+4) Loguear un mensaje claro en el servidor cuando se active el guardrail:
+   - “[WhatDoesGuard] Rechazada respuesta en inglés para P{N}: '{answer}'”
+5) Mantener el hook de testing:
+   - ?initialQuestionIndex debe seguir funcionando para empezar en P25–P32 y probar rápido.
+
+ENTREGABLE:
+- Cambio mínimo en backend implementando el guardrail.
+- Indicar archivo(s) tocados y el lugar exacto donde se aplica el guard.
+- Explicación breve (2–4 líneas) de la heurística y cómo testear manualmente:
+  - Iniciar con initialQuestionIndex=25
+  - Responder “employee” → debe rechazarse y corregirse en español
+  - Luego responder “empleado” → debe aceptarse y permitir avanzar

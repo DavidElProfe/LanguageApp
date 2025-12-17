@@ -55,11 +55,83 @@ export const SIMPLE_CONVERSATION_QUESTIONS: string[] = [
 
 export const TOTAL_QUESTIONS = SIMPLE_CONVERSATION_QUESTIONS.length;
 
+// Indices for "What does X mean?" questions (1-based)
+const WHAT_DOES_QUESTION_START = 25;
+const WHAT_DOES_QUESTION_END = 32;
+
 export function getQuestionByIndex(index: number): string | null {
   if (index < 1 || index > TOTAL_QUESTIONS) {
     return null;
   }
   return SIMPLE_CONVERSATION_QUESTIONS[index - 1];
+}
+
+/**
+ * Check if the current question index is a "What does X mean?" question
+ * These questions require Spanish responses
+ */
+export function isWhatDoesQuestion(questionIndex: number): boolean {
+  return questionIndex >= WHAT_DOES_QUESTION_START && questionIndex <= WHAT_DOES_QUESTION_END;
+}
+
+/**
+ * Known English translations that should be rejected for "What does X mean?" questions
+ * These are the exact English words the student might incorrectly use instead of Spanish
+ */
+const KNOWN_ENGLISH_TRANSLATIONS = [
+  // Direct translations for P25-P32 questions
+  'computer', 'computers',
+  'office', 'offices', 
+  'paper', 'papers',
+  'employee', 'employees',
+  'director', 'directors',
+  'student', 'students',
+  'conference room', 'conference rooms', 'meeting room', 'meeting rooms',
+  'classroom', 'classrooms', 'class room', 'class rooms',
+  // Common English-only responses
+  'it means', 'means', 'the', 'a', 'an',
+];
+
+/**
+ * Detect if a response is an English translation that should be rejected
+ * Uses POSITIVE matching against known English words, not negative heuristics
+ * 
+ * Returns true ONLY if the response matches a known English translation
+ */
+export function looksLikeEnglish(text: string): boolean {
+  const trimmed = text.trim().toLowerCase();
+  
+  // Empty or too short to determine
+  if (trimmed.length < 2) {
+    return false;
+  }
+  
+  // If text contains Spanish-specific characters, definitely NOT English
+  const spanishChars = /[áéíóúñüÁÉÍÓÚÑÜ¿¡]/;
+  if (spanishChars.test(trimmed)) {
+    return false;
+  }
+  
+  // Clean punctuation for matching
+  const cleaned = trimmed.replace(/[.,!?'"]/g, '').trim();
+  
+  // Check if the response IS a known English translation
+  for (const englishWord of KNOWN_ENGLISH_TRANSLATIONS) {
+    // Exact match
+    if (cleaned === englishWord) {
+      return true;
+    }
+    // Response starts with or ends with the English word (e.g., "it's employee")
+    if (cleaned.startsWith(englishWord + ' ') || cleaned.endsWith(' ' + englishWord)) {
+      return true;
+    }
+    // Response is just the English word with articles (e.g., "the employee", "an office")
+    if (cleaned === 'the ' + englishWord || cleaned === 'a ' + englishWord || cleaned === 'an ' + englishWord) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 export function findQuestionIndex(text: string): number | null {
