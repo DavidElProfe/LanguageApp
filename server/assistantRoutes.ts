@@ -187,7 +187,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 0;
+    let initialQuestionIndex = 28;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);
@@ -386,7 +386,7 @@ assistantRouter.post(
       // Check if response looks like English
       if (looksLikeEnglish(studentTranscript)) {
         console.log(
-          `[WhatDoesGuard] Rechazada respuesta en inglés para P${currentIndex}: '${studentTranscript}'`
+          `[WhatDoesGuard] Rechazada respuesta en inglés para P${currentIndex}: '${studentTranscript}'`,
         );
 
         // Return correction instruction for the AI
@@ -422,7 +422,7 @@ Example response: "Debes responder en español. ${currentQuestion}"
       currentQuestionIndex: currentIndex,
       currentQuestion,
     });
-  }
+  },
 );
 
 interface TextChatMessage {
