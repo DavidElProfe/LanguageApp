@@ -2,6 +2,54 @@ import { useState, useRef, useEffect } from "react";
 
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
 
+const WHAT_DOES_QUESTION_START = 25;
+const WHAT_DOES_QUESTION_END = 32;
+
+const KNOWN_ENGLISH_TRANSLATIONS = [
+  'computer', 'computers',
+  'office', 'offices', 
+  'paper', 'papers',
+  'employee', 'employees',
+  'director', 'directors',
+  'student', 'students',
+  'conference room', 'conference rooms', 'meeting room', 'meeting rooms',
+  'classroom', 'classrooms', 'class room', 'class rooms',
+  'it means', 'means', 'the', 'a', 'an',
+];
+
+function isWhatDoesQuestion(questionIndex: number): boolean {
+  return questionIndex >= WHAT_DOES_QUESTION_START && questionIndex <= WHAT_DOES_QUESTION_END;
+}
+
+function looksLikeEnglish(text: string): boolean {
+  const trimmed = text.trim().toLowerCase();
+  
+  if (trimmed.length < 2) {
+    return false;
+  }
+  
+  const spanishChars = /[áéíóúñüÁÉÍÓÚÑÜ¿¡]/;
+  if (spanishChars.test(trimmed)) {
+    return false;
+  }
+  
+  const cleaned = trimmed.replace(/[.,!?'"]/g, '').trim();
+  
+  for (const englishWord of KNOWN_ENGLISH_TRANSLATIONS) {
+    if (cleaned === englishWord) {
+      return true;
+    }
+    if (cleaned.startsWith(englishWord + ' ') || cleaned.endsWith(' ' + englishWord)) {
+      return true;
+    }
+    if (cleaned === 'the ' + englishWord || cleaned === 'a ' + englishWord || cleaned === 'an ' + englishWord) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
 export interface ConversationMessage {
   id: string;
   role: "user" | "assistant";
@@ -236,6 +284,29 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
             const text = data.transcript?.trim();
             console.log("🔥 STUDENT TRANSCRIPT RECEIVED:", text);
             if (!text) return;
+
+            const currentQuestionIndex = currentQuestionIndexRef.current;
+            
+            if (isWhatDoesQuestion(currentQuestionIndex) && looksLikeEnglish(text)) {
+              console.log(`🚫 [Guardrail] English detected for P${currentQuestionIndex}: "${text}"`);
+              
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `user-${Date.now()}`,
+                  role: "user",
+                  text: text,
+                  timestamp: Date.now(),
+                },
+                {
+                  id: `correction-${Date.now()}`,
+                  role: "assistant",
+                  text: "Recuerda: para las preguntas '¿Qué significa...?', responde en español. Por ejemplo, 'computer' significa 'computadora'. Intenta de nuevo en español.",
+                  timestamp: Date.now(),
+                },
+              ]);
+              return;
+            }
 
             setMessages((prev) => [
               ...prev,
