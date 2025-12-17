@@ -1,31 +1,31 @@
 /**
  * OpenAI Realtime API Cost Estimator
  * 
- * Pricing (as of Dec 2024 for gpt-4o-realtime-preview):
- * - Audio input: $100 per 1M tokens (~$0.06/minute)
- * - Audio output: $200 per 1M tokens (~$0.24/minute)
- * - Text input (instructions): $5 per 1M tokens
+ * Pricing approach: Per-minute rates for simplicity and accuracy.
  * 
- * Audio token rate: ~1,500-1,700 tokens per minute of audio
- * We use 1,600 tokens/minute as average.
+ * Conservative estimates based on GPT-4o Realtime voice mode:
+ * - Audio input (user speaking): ~$0.01/minute
+ * - Audio output (AI speaking): ~$0.04/minute
+ * - Text (system prompt): negligible (~$0.001 total)
  * 
  * Assumptions:
  * - 50% of session time is user speaking (input)
  * - 50% of session time is AI speaking (output)
- * - Instructions sent once at session start (~1,500 tokens)
+ * - System prompt cost is minimal and fixed
+ * 
+ * Expected result: ~$0.025/minute of conversation
+ * A 5-minute session ≈ $0.12-0.15
  */
 
 const MODEL_NAME = "gpt-4o-realtime-preview";
 
-// Pricing per 1M tokens
-const AUDIO_INPUT_PRICE_PER_1M = 100;   // $100/1M tokens
-const AUDIO_OUTPUT_PRICE_PER_1M = 200;  // $200/1M tokens
-const TEXT_INPUT_PRICE_PER_1M = 5;      // $5/1M tokens
+// Per-minute pricing (conservative estimates)
+const AUDIO_INPUT_COST_PER_MINUTE = 0.01;   // $0.01/min for user audio
+const AUDIO_OUTPUT_COST_PER_MINUTE = 0.04;  // $0.04/min for AI audio
+const TEXT_PROMPT_FIXED_COST = 0.001;       // ~$0.001 for system prompt
 
-// Estimated tokens per minute of audio
+// Estimated tokens per minute (for logging purposes only)
 const AUDIO_TOKENS_PER_MINUTE = 1600;
-
-// Estimated instruction tokens (system prompt)
 const ESTIMATED_INSTRUCTION_TOKENS = 1500;
 
 export interface SessionCostEstimate {
@@ -55,16 +55,19 @@ export function estimateSessionCost(
   const durationMs = endedAt.getTime() - startedAt.getTime();
   const durationMinutes = durationMs / (1000 * 60);
   
-  // Estimate audio tokens (50% input, 50% output)
+  // Estimate audio tokens (50% input, 50% output) - for logging only
   const totalAudioTokens = durationMinutes * AUDIO_TOKENS_PER_MINUTE;
   const inputTokens = Math.round(totalAudioTokens * 0.5);
   const outputTokens = Math.round(totalAudioTokens * 0.5);
   const textTokens = ESTIMATED_INSTRUCTION_TOKENS;
   
-  // Calculate costs
-  const audioInputCost = (inputTokens / 1_000_000) * AUDIO_INPUT_PRICE_PER_1M;
-  const audioOutputCost = (outputTokens / 1_000_000) * AUDIO_OUTPUT_PRICE_PER_1M;
-  const textCost = (textTokens / 1_000_000) * TEXT_INPUT_PRICE_PER_1M;
+  // Calculate costs using per-minute rates (50/50 split assumption)
+  const inputMinutes = durationMinutes * 0.5;
+  const outputMinutes = durationMinutes * 0.5;
+  
+  const audioInputCost = inputMinutes * AUDIO_INPUT_COST_PER_MINUTE;
+  const audioOutputCost = outputMinutes * AUDIO_OUTPUT_COST_PER_MINUTE;
+  const textCost = TEXT_PROMPT_FIXED_COST;
   
   const estimatedCostUSD = audioInputCost + audioOutputCost + textCost;
   
