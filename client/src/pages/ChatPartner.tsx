@@ -2,7 +2,15 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MessageSquare, ArrowLeft, Loader2, Eye, EyeOff, Mic, LogOut } from "lucide-react";
+import {
+  MessageSquare,
+  ArrowLeft,
+  Loader2,
+  Eye,
+  EyeOff,
+  Mic,
+  LogOut,
+} from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -15,14 +23,30 @@ import { useRealtimeConversation } from "@/hooks/useRealtimeConversation";
 import ConversationTranscript from "@/components/ConversationTranscript";
 
 const LESSON_OPTIONS = [
-  { value: 1, label: "Lección 1: Presentaciones y conversación básica", available: true },
-  { value: 2, label: "Lección 2: Describir cosas y preferencias", available: false },
+  {
+    value: 1,
+    label: "Lección 1: Presentaciones y conversación básica",
+    available: true,
+  },
+  {
+    value: 2,
+    label: "Lección 2: Describir cosas y preferencias",
+    available: false,
+  },
   { value: 3, label: "Lección 3: Comida, compras y números", available: false },
-  { value: 4, label: "Lección 4: Actividades diarias (yo/tú)", available: false },
+  {
+    value: 4,
+    label: "Lección 4: Actividades diarias (yo/tú)",
+    available: false,
+  },
   { value: 5, label: "Lección 5: Presente simple (él/ella)", available: false },
   { value: 6, label: "Lección 6: Restaurantes", available: false },
   { value: 7, label: "Lección 7: Hoteles y viajes", available: false },
-  { value: 8, label: "Lección 8: Preferencias y estilo de vida", available: false },
+  {
+    value: 8,
+    label: "Lección 8: Preferencias y estilo de vida",
+    available: false,
+  },
   { value: 9, label: "Lección 9: Rutinas y orden temporal", available: false },
   { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
 ];
@@ -33,9 +57,17 @@ export default function ChatPartner() {
   // Voice-only mode by default. Set to true to show transcription (debug mode).
   const [showDebugChat, setShowDebugChat] = useState(false);
   const [recapRequested, setRecapRequested] = useState(false);
-  
-  const { connectionState, errorMessage, messages, currentLesson, currentStep, startConversation, stopConversation, requestSessionRecap } =
-    useRealtimeConversation({ lesson: selectedLesson });
+
+  const {
+    connectionState,
+    errorMessage,
+    messages,
+    currentLesson,
+    currentStep,
+    startConversation,
+    stopConversation,
+    requestSessionRecap,
+  } = useRealtimeConversation({ lesson: selectedLesson });
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -63,25 +95,6 @@ export default function ChatPartner() {
                   <CardTitle className="text-2xl">Práctica de Voz</CardTitle>
                 </div>
                 {/* Debug toggle - allows showing/hiding text transcription */}
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDebugChat(!showDebugChat)}
-                  className="text-muted-foreground"
-                  data-testid="button-toggle-debug"
-                >
-                  {showDebugChat ? (
-                    <>
-                      <EyeOff className="h-4 w-4 mr-1" />
-                      Ocultar texto
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="h-4 w-4 mr-1" />
-                      Ver texto
-                    </>
-                  )}
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -103,21 +116,28 @@ export default function ChatPartner() {
                 </label>
                 <Select
                   value={selectedLesson.toString()}
-                  onValueChange={(value) => setSelectedLesson(parseInt(value, 10))}
-                  disabled={connectionState !== "idle" && connectionState !== "ended" && connectionState !== "error"}
+                  onValueChange={(value) =>
+                    setSelectedLesson(parseInt(value, 10))
+                  }
+                  disabled={
+                    connectionState !== "idle" &&
+                    connectionState !== "ended" &&
+                    connectionState !== "error"
+                  }
                 >
                   <SelectTrigger id="lesson-select" data-testid="select-lesson">
                     <SelectValue placeholder="Selecciona una lección" />
                   </SelectTrigger>
                   <SelectContent>
                     {LESSON_OPTIONS.map((option) => (
-                      <SelectItem 
-                        key={option.value} 
+                      <SelectItem
+                        key={option.value}
                         value={option.value.toString()}
                         disabled={!option.available}
                         className={!option.available ? "opacity-50" : ""}
                       >
-                        {option.label}{!option.available && " — Próximamente"}
+                        {option.label}
+                        {!option.available && " — Próximamente"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -134,9 +154,15 @@ export default function ChatPartner() {
               )}
 
               {/* Debug mode: Show text transcription only when enabled */}
-              {showDebugChat && (connectionState === "connecting" || connectionState === "active" || connectionState === "ended") && (
-                <ConversationTranscript messages={messages} connectionState={connectionState} />
-              )}
+              {showDebugChat &&
+                (connectionState === "connecting" ||
+                  connectionState === "active" ||
+                  connectionState === "ended") && (
+                  <ConversationTranscript
+                    messages={messages}
+                    connectionState={connectionState}
+                  />
+                )}
 
               {connectionState === "idle" && (
                 <Button
@@ -151,7 +177,12 @@ export default function ChatPartner() {
               )}
 
               {connectionState === "connecting" && (
-                <Button size="lg" className="w-full" disabled data-testid="button-connecting">
+                <Button
+                  size="lg"
+                  className="w-full"
+                  disabled
+                  data-testid="button-connecting"
+                >
                   <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Conectando...
                 </Button>
@@ -173,7 +204,9 @@ export default function ChatPartner() {
                           <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full animate-pulse border-2 border-background"></div>
                         </div>
                         <div>
-                          <p className="font-semibold text-xl mb-1">Estás hablando con el tutor</p>
+                          <p className="font-semibold text-xl mb-1">
+                            Estás hablando con el tutor
+                          </p>
                           <p className="text-sm text-muted-foreground">
                             Escucha y responde en inglés
                           </p>
@@ -190,10 +223,16 @@ export default function ChatPartner() {
                     >
                       <div className="flex items-center justify-center gap-3 mb-2">
                         <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-                        <span className="font-semibold">Conversación activa</span>
+                        <span className="font-semibold">
+                          Conversación activa
+                        </span>
                       </div>
-                      <p className="text-xs text-primary font-medium" data-testid="text-active-lesson">
-                        {LESSON_OPTIONS.find(o => o.value === currentLesson)?.label || `Lección ${currentLesson}`}
+                      <p
+                        className="text-xs text-primary font-medium"
+                        data-testid="text-active-lesson"
+                      >
+                        {LESSON_OPTIONS.find((o) => o.value === currentLesson)
+                          ?.label || `Lección ${currentLesson}`}
                       </p>
                     </div>
                   )}
