@@ -8,6 +8,7 @@ import * as schema from "@shared/schema";
 import { desc } from "drizzle-orm";
 import { z } from "zod";
 import { assistantRouter } from "./assistantRoutes";
+import { estimateSessionCost, logSessionCost } from "./utils/costEstimator";
 
 interface AuthRequest extends Request {
   user?: any;
@@ -426,6 +427,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }
+      
+      // Log cost estimate when session ends
+      if (session.startedAt && session.endedAt) {
+        const costEstimate = estimateSessionCost(
+          session.id,
+          new Date(session.startedAt),
+          new Date(session.endedAt)
+        );
+        logSessionCost(costEstimate);
+      }
+      
       res.json(session);
     } catch (error: any) {
       console.error('End AI session error:', error);
