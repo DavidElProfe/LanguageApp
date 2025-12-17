@@ -234,6 +234,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
 
           if (data.type === "conversation.item.input_audio_transcription.completed") {
             const text = data.transcript?.trim();
+            console.log("🔥 STUDENT TRANSCRIPT RECEIVED:", text);
             if (!text) return;
 
             setMessages((prev) => [
