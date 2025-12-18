@@ -15,8 +15,6 @@ import {
   TOTAL_QUESTIONS,
   getQuestionByIndex,
   findQuestionIndex,
-  isWhatDoesQuestion,
-  looksLikeEnglish,
 } from "./prompts/simpleConversationQuestions";
 
 export const assistantRouter = Router();
@@ -187,7 +185,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 28;
+    let initialQuestionIndex = 0;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);
@@ -358,72 +356,6 @@ assistantRouter.get("/simple-session/:sessionId/state", (req, res) => {
     createdAt: sessionState.createdAt,
   });
 });
-
-/**
- * Validate student response for "What does X mean?" questions (P25-P32)
- * Enforces Spanish-only responses with backend guardrail
- */
-assistantRouter.post(
-  "/simple-session/:sessionId/validate-response",
-  (req, res) => {
-    const { sessionId } = req.params;
-    const { studentTranscript } = req.body;
-
-    if (!studentTranscript || typeof studentTranscript !== "string") {
-      return res.status(400).json({ error: "studentTranscript is required" });
-    }
-
-    const sessionState = simpleSessionStates.get(sessionId);
-    if (!sessionState) {
-      return res.status(404).json({ error: "Session not found" });
-    }
-
-    const currentIndex = sessionState.currentQuestionIndex;
-    const currentQuestion = getQuestionByIndex(currentIndex);
-
-    // Check if this is a "What does X mean?" question (P25-P32)
-    if (isWhatDoesQuestion(currentIndex)) {
-      // Check if response looks like English
-      if (looksLikeEnglish(studentTranscript)) {
-        console.log(
-          `[WhatDoesGuard] Rechazada respuesta en inglés para P${currentIndex}: '${studentTranscript}'`,
-        );
-
-        // Return correction instruction for the AI
-        const correctionInstruction = `[INTERNAL CORRECTION REQUIRED]
-The student answered in ENGLISH: "${studentTranscript}"
-This is INCORRECT because they must answer in SPANISH.
-
-You MUST:
-1. Tell them (in Spanish) that they need to answer in Spanish
-2. Repeat the SAME question in English exactly: "${currentQuestion}"
-3. Wait for their new attempt
-
-Example response: "Debes responder en español. ${currentQuestion}"
-[END INTERNAL CORRECTION]`;
-
-        return res.json({
-          sessionId,
-          valid: false,
-          guardrailTriggered: true,
-          reason: "english_response_on_spanish_required_question",
-          currentQuestionIndex: currentIndex,
-          currentQuestion,
-          correctionInstruction,
-        });
-      }
-    }
-
-    // Response is valid (either not a "What does" question or answered in Spanish)
-    return res.json({
-      sessionId,
-      valid: true,
-      guardrailTriggered: false,
-      currentQuestionIndex: currentIndex,
-      currentQuestion,
-    });
-  },
-);
 
 interface TextChatMessage {
   role: "user" | "assistant";
