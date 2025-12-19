@@ -282,17 +282,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
                 return;
               }
 
-              setMessages((prev) => [
-                ...prev,
-                {
-                  id: `assistant-${Date.now()}`,
-                  role: "assistant",
-                  text: text,
-                  timestamp: Date.now(),
-                },
-              ]);
-              saveMessageToBackend("assistant", text);
-              processAiResponseWithBlockCheck(text);
+              handleAiResponse(text);
             }
 
             if (data.type === "error") {
@@ -344,7 +334,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
     }
   }, []);
 
-  const processAiResponseWithBlockCheck = async (aiTranscript: string) => {
+  const handleAiResponse = async (aiTranscript: string) => {
     if (!simpleSessionIdRef.current || !aiTranscript.trim()) return;
 
     try {
@@ -359,28 +349,52 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
 
       if (response.ok) {
         const result = await response.json();
+        
         if (result.advanced) {
           const newIndex = result.currentIndex;
           console.log(`[BlockReset] Advanced to question ${newIndex}`);
           
           lessonStateRef.current.globalQuestionIndex = newIndex;
           lessonStateRef.current.correctCount += 1;
-          
           setLessonProgress({ ...lessonStateRef.current });
 
           if (newIndex > TOTAL_QUESTIONS) {
             console.log(`[BlockReset] Lesson complete!`);
+            setMessages((prev) => [...prev, {
+              id: `assistant-${Date.now()}`,
+              role: "assistant",
+              text: aiTranscript,
+              timestamp: Date.now(),
+            }]);
+            saveMessageToBackend("assistant", aiTranscript);
             return;
           }
 
-          if (newIndex > 1 && (newIndex - 1) % QUESTION_BLOCK_SIZE === 0) {
-            console.log(`[BlockReset] Block boundary reached at question ${newIndex}, resetting session...`);
+          const isBlockBoundary = newIndex > 1 && (newIndex - 1) % QUESTION_BLOCK_SIZE === 0;
+          
+          if (isBlockBoundary) {
+            console.log(`[BlockReset] Block boundary at Q${newIndex} - discarding old context response, resetting NOW`);
             await resetRealtimeSession(newIndex);
+            return;
           }
         }
+        
+        setMessages((prev) => [...prev, {
+          id: `assistant-${Date.now()}`,
+          role: "assistant",
+          text: aiTranscript,
+          timestamp: Date.now(),
+        }]);
+        saveMessageToBackend("assistant", aiTranscript);
       }
     } catch (error) {
       console.error("Error processing AI response:", error);
+      setMessages((prev) => [...prev, {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        text: aiTranscript,
+        timestamp: Date.now(),
+      }]);
     }
   };
 
