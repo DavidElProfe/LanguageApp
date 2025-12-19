@@ -73,10 +73,30 @@ function getOrCreateSessionState(
 }
 
 function generateSilentContext(questionIndex: number): string {
-  if (questionIndex === 0) {
-    return `\n\n[INTERNAL ORIENTATION - DO NOT MENTION THIS TO THE STUDENT]\nYou are about to start the conversation. Begin with question 1: "${getQuestionByIndex(1)}"\nDo not reference question numbers aloud. Simply ask the question naturally.\n[END INTERNAL ORIENTATION]\n`;
+  const baseContext = `
+[INTERNAL ORIENTATION - DO NOT MENTION THIS TO THE STUDENT]
+
+=== SESSION RESET NOTICE ===
+This is a FRESH session. You have NO memory of previous questions or answers.
+Do NOT summarize, reference, or acknowledge any prior conversation.
+Do NOT say things like "Let's continue" or "Where were we".
+Simply ask the current question as if starting fresh.
+
+=== CURRENT POSITION ===
+`;
+
+  if (questionIndex <= 1) {
+    return baseContext + `You are about to start the conversation. Begin with question 1: "${getQuestionByIndex(1)}"
+Do not reference question numbers aloud. Simply ask the question naturally.
+[END INTERNAL ORIENTATION]
+`;
   }
-  return `\n\n[INTERNAL ORIENTATION - DO NOT MENTION THIS TO THE STUDENT]\nYou are currently at question ${questionIndex} of ${TOTAL_QUESTIONS}.\nThe current question is: "${getQuestionByIndex(questionIndex)}"\nDo not reference question numbers aloud. Simply ask the question naturally.\n[END INTERNAL ORIENTATION]\n`;
+  return baseContext + `You are currently at question ${questionIndex} of ${TOTAL_QUESTIONS}.
+The current question is: "${getQuestionByIndex(questionIndex)}"
+Do not reference question numbers aloud. Simply ask the question naturally.
+Start by asking ONLY this question. Do not recap or summarize anything.
+[END INTERNAL ORIENTATION]
+`;
 }
 
 setInterval(
@@ -209,11 +229,11 @@ assistantRouter.get("/simple-session", async (req, res) => {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 25;
+    let initialQuestionIndex = 1;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);
-      if (!isNaN(parsed) && parsed >= 0 && parsed <= TOTAL_QUESTIONS) {
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= TOTAL_QUESTIONS) {
         initialQuestionIndex = parsed;
         console.log(
           `[SimpleSession] Starting at custom question index: ${initialQuestionIndex}`,
@@ -332,8 +352,7 @@ assistantRouter.post(
         });
       }
 
-      //const detectedIndex = findQuestionIndex(aiTranscript);
-      const detectedIndex = null;
+      const detectedIndex = findQuestionIndex(aiTranscript);
 
       console.log(
         `[SimpleSession] Processing response for session ${sessionId}`,

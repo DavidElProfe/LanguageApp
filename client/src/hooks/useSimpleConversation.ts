@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
 
@@ -9,12 +9,70 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
+interface LessonState {
+  globalQuestionIndex: number;
+  correctCount: number;
+  incorrectCount: number;
+}
+
 interface UseSimpleConversationReturn {
   connectionState: ConnectionState;
   errorMessage: string;
   messages: ConversationMessage[];
+  lessonProgress: LessonState;
   startConversation: () => Promise<void>;
   stopConversation: () => Promise<void>;
+}
+
+const QUESTION_BLOCK_SIZE = 5;
+const TOTAL_QUESTIONS = 52;
+
+const WHAT_DOES_QUESTION_START = 25;
+const WHAT_DOES_QUESTION_END = 32;
+
+const KNOWN_ENGLISH_TRANSLATIONS = [
+  'computer', 'computers',
+  'office', 'offices', 
+  'paper', 'papers',
+  'employee', 'employees',
+  'director', 'directors',
+  'student', 'students',
+  'conference room', 'conference rooms', 'meeting room', 'meeting rooms',
+  'classroom', 'classrooms', 'class room', 'class rooms',
+  'it means', 'means',
+];
+
+function isWhatDoesQuestion(questionIndex: number): boolean {
+  return questionIndex >= WHAT_DOES_QUESTION_START && questionIndex <= WHAT_DOES_QUESTION_END;
+}
+
+function looksLikeEnglish(text: string): boolean {
+  const trimmed = text.trim().toLowerCase();
+  
+  if (trimmed.length < 2) {
+    return false;
+  }
+  
+  const spanishChars = /[áéíóúñüÁÉÍÓÚÑÜ¿¡]/;
+  if (spanishChars.test(trimmed)) {
+    return false;
+  }
+  
+  const cleaned = trimmed.replace(/[.,!?'"]/g, '').trim();
+  
+  for (const englishWord of KNOWN_ENGLISH_TRANSLATIONS) {
+    if (cleaned === englishWord) {
+      return true;
+    }
+    if (cleaned.startsWith(englishWord + ' ') || cleaned.endsWith(' ' + englishWord)) {
+      return true;
+    }
+    if (cleaned === 'the ' + englishWord || cleaned === 'a ' + englishWord || cleaned === 'an ' + englishWord) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 export function useSimpleConversation(): UseSimpleConversationReturn {
@@ -28,7 +86,20 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const simpleSessionIdRef = useRef<string | null>(null);
-  const currentQuestionIndexRef = useRef<number>(0);
+  
+  const lessonStateRef = useRef<LessonState>({
+    globalQuestionIndex: 1,
+    correctCount: 0,
+    incorrectCount: 0,
+  });
+  
+  const isResettingRef = useRef<boolean>(false);
+
+  const [lessonProgress, setLessonProgress] = useState<LessonState>({
+    globalQuestionIndex: 1,
+    correctCount: 0,
+    incorrectCount: 0,
+  });
 
   useEffect(() => {
     import("@/lib/supabase").then(({ getSupabase }) => {
@@ -63,40 +134,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
     }
   };
 
-  const processAiResponse = async (aiTranscript: string) => {
-    if (!simpleSessionIdRef.current || !aiTranscript.trim()) return;
-
-    try {
-      const response = await fetch(
-        `/api/assistant/simple-session/${simpleSessionIdRef.current}/process-response`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ aiTranscript }),
-        }
-      );
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.advanced) {
-          console.log(`[SimpleConversation] Advanced to question ${result.currentIndex}`);
-          currentQuestionIndexRef.current = result.currentIndex;
-        }
-      }
-    } catch (error) {
-      console.error("Error processing AI response:", error);
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      stopConversation().catch(console.error);
-    };
-  }, []);
-
-  const stopConversation = async () => {
-    const sessionId = sessionIdRef.current;
-
+  const closeRealtimeConnection = useCallback(async (keepDbSession: boolean = false) => {
     if (dcRef.current) {
       try {
         dcRef.current.close();
@@ -120,7 +158,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
       audioRef.current.srcObject = null;
     }
 
-    if (sessionId) {
+    if (!keepDbSession && sessionIdRef.current) {
       try {
         if (globalThis.__supabaseInitPromise) {
           await globalThis.__supabaseInitPromise;
@@ -130,7 +168,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
         if (supabase) {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.access_token) {
-            await fetch(`/api/ai-sessions/${sessionId}/end`, {
+            await fetch(`/api/ai-sessions/${sessionIdRef.current}/end`, {
               method: "POST",
               headers: {
                 Authorization: `Bearer ${session.access_token}`,
@@ -144,9 +182,250 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
       }
     }
 
-    sessionIdRef.current = null;
     simpleSessionIdRef.current = null;
-    currentQuestionIndexRef.current = 0;
+  }, []);
+
+  const createRealtimeSession = useCallback(async (initialQuestionIndex: number): Promise<string | null> => {
+    try {
+      const tokenRes = await fetch(`/api/assistant/simple-session?initialQuestionIndex=${initialQuestionIndex}`);
+      if (!tokenRes.ok) {
+        throw new Error("Failed to get session token");
+      }
+
+      const tokenData = await tokenRes.json();
+      const { token, sessionId: simpleSessionId, currentQuestionIndex } = tokenData;
+      
+      if (simpleSessionId) {
+        simpleSessionIdRef.current = simpleSessionId;
+        console.log(`[BlockReset] Created backend session ${simpleSessionId} at question ${currentQuestionIndex}`);
+      }
+
+      const pc = new RTCPeerConnection();
+      pcRef.current = pc;
+
+      const audioEl = document.createElement("audio");
+      audioEl.autoplay = true;
+      audioRef.current = audioEl;
+
+      pc.ontrack = (e) => {
+        audioEl.srcObject = e.streams[0];
+      };
+
+      const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = ms;
+      ms.getTracks().forEach((track) => pc.addTrack(track, ms));
+
+      const dc = pc.createDataChannel("oai-events");
+      dcRef.current = dc;
+
+      return new Promise((resolve, reject) => {
+        dc.addEventListener("open", async () => {
+          console.log(`[BlockReset] DataChannel open, sending response.create`);
+          
+          setTimeout(() => {
+            dc.send(JSON.stringify({ type: "response.create" }));
+          }, 100);
+          
+          resolve(token);
+        });
+
+        dc.addEventListener("message", (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "conversation.item.input_audio_transcription.completed") {
+              const text = data.transcript?.trim();
+              console.log("🔥 STUDENT TRANSCRIPT RECEIVED:", text);
+              if (!text) return;
+
+              const currentIndex = lessonStateRef.current.globalQuestionIndex;
+              
+              if (isWhatDoesQuestion(currentIndex) && looksLikeEnglish(text)) {
+                console.log(`🚫 [Guardrail] English detected for P${currentIndex}: "${text}"`);
+                
+                setMessages((prev) => [
+                  ...prev,
+                  {
+                    id: `user-${Date.now()}`,
+                    role: "user",
+                    text: text,
+                    timestamp: Date.now(),
+                  },
+                  {
+                    id: `correction-${Date.now()}`,
+                    role: "assistant",
+                    text: "Recuerda: para las preguntas '¿Qué significa...?', responde en español. Intenta de nuevo.",
+                    timestamp: Date.now(),
+                  },
+                ]);
+                return;
+              }
+
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `user-${Date.now()}`,
+                  role: "user",
+                  text: text,
+                  timestamp: Date.now(),
+                },
+              ]);
+              saveMessageToBackend("user", text);
+            }
+
+            if (data.type === "response.audio_transcript.done") {
+              const text = data.transcript?.trim();
+              if (!text) return;
+
+              if (isResettingRef.current) {
+                console.log(`[BlockReset] Ignoring response during reset: "${text.substring(0, 50)}..."`);
+                return;
+              }
+
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `assistant-${Date.now()}`,
+                  role: "assistant",
+                  text: text,
+                  timestamp: Date.now(),
+                },
+              ]);
+              saveMessageToBackend("assistant", text);
+              processAiResponseWithBlockCheck(text);
+            }
+
+            if (data.type === "error") {
+              console.error("Realtime error:", data.error);
+              setErrorMessage(data.error?.message || "An error occurred");
+            }
+          } catch (err) {
+            console.error("Error parsing message:", err);
+          }
+        });
+
+        dc.addEventListener("close", () => {
+          if (!isResettingRef.current) {
+            setConnectionState("ended");
+          }
+        });
+
+        pc.createOffer()
+          .then(async (offer) => {
+            await pc.setLocalDescription(offer);
+            
+            const sdpRes = await fetch(
+              "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/sdp",
+                },
+                body: offer.sdp,
+              }
+            );
+
+            if (!sdpRes.ok) {
+              throw new Error("Failed to establish WebRTC connection");
+            }
+
+            const answer: RTCSessionDescriptionInit = {
+              type: "answer",
+              sdp: await sdpRes.text(),
+            };
+            await pc.setRemoteDescription(answer);
+          })
+          .catch(reject);
+      });
+    } catch (error) {
+      console.error("Error creating realtime session:", error);
+      throw error;
+    }
+  }, []);
+
+  const processAiResponseWithBlockCheck = async (aiTranscript: string) => {
+    if (!simpleSessionIdRef.current || !aiTranscript.trim()) return;
+
+    try {
+      const response = await fetch(
+        `/api/assistant/simple-session/${simpleSessionIdRef.current}/process-response`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ aiTranscript }),
+        }
+      );
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.advanced) {
+          const newIndex = result.currentIndex;
+          console.log(`[BlockReset] Advanced to question ${newIndex}`);
+          
+          lessonStateRef.current.globalQuestionIndex = newIndex;
+          lessonStateRef.current.correctCount += 1;
+          
+          setLessonProgress({ ...lessonStateRef.current });
+
+          if (newIndex > TOTAL_QUESTIONS) {
+            console.log(`[BlockReset] Lesson complete!`);
+            return;
+          }
+
+          if (newIndex > 1 && (newIndex - 1) % QUESTION_BLOCK_SIZE === 0) {
+            console.log(`[BlockReset] Block boundary reached at question ${newIndex}, resetting session...`);
+            await resetRealtimeSession(newIndex);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error processing AI response:", error);
+    }
+  };
+
+  const resetRealtimeSession = async (targetQuestionIndex: number) => {
+    if (isResettingRef.current) {
+      console.log(`[BlockReset] Already resetting, skipping`);
+      return;
+    }
+
+    isResettingRef.current = true;
+    console.log(`[BlockReset] Starting session reset for question ${targetQuestionIndex}`);
+
+    try {
+      await closeRealtimeConnection(true);
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      await createRealtimeSession(targetQuestionIndex);
+      
+      console.log(`[BlockReset] Session reset complete, now at question ${targetQuestionIndex}`);
+    } catch (error) {
+      console.error("[BlockReset] Error during session reset:", error);
+      setErrorMessage("Error resetting session. Please try again.");
+      setConnectionState("error");
+    } finally {
+      isResettingRef.current = false;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      closeRealtimeConnection(false).catch(console.error);
+    };
+  }, [closeRealtimeConnection]);
+
+  const stopConversation = async () => {
+    await closeRealtimeConnection(false);
+    
+    sessionIdRef.current = null;
+    lessonStateRef.current = {
+      globalQuestionIndex: 1,
+      correctCount: 0,
+      incorrectCount: 0,
+    };
+    setLessonProgress({ ...lessonStateRef.current });
     setConnectionState((prev) => (prev === "error" ? "error" : "ended"));
   };
 
@@ -155,6 +434,13 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
       setConnectionState("connecting");
       setErrorMessage("");
       setMessages([]);
+      
+      lessonStateRef.current = {
+        globalQuestionIndex: 1,
+        correctCount: 0,
+        incorrectCount: 0,
+      };
+      setLessonProgress({ ...lessonStateRef.current });
 
       if (globalThis.__supabaseInitPromise) {
         await globalThis.__supabaseInitPromise;
@@ -184,124 +470,9 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
         sessionIdRef.current = sessionData.id;
       }
 
-      const tokenRes = await fetch("/api/assistant/simple-session");
-      if (!tokenRes.ok) {
-        throw new Error("Failed to get session token");
-      }
-
-      const tokenData = await tokenRes.json();
-      const { token, instructionsIncluded, sessionId: simpleSessionId, currentQuestionIndex } = tokenData;
+      await createRealtimeSession(1);
       
-      if (simpleSessionId) {
-        simpleSessionIdRef.current = simpleSessionId;
-        currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
-        console.log(`[SimpleConversation] Backend session ${simpleSessionId} at question ${currentQuestionIndex}`);
-      }
-
-      const pc = new RTCPeerConnection();
-      pcRef.current = pc;
-
-      const audioEl = document.createElement("audio");
-      audioEl.autoplay = true;
-      audioRef.current = audioEl;
-
-      pc.ontrack = (e) => {
-        audioEl.srcObject = e.streams[0];
-      };
-
-      const ms = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = ms;
-      ms.getTracks().forEach((track) => pc.addTrack(track, ms));
-
-      const dc = pc.createDataChannel("oai-events");
-      dcRef.current = dc;
-
-      dc.addEventListener("open", () => {
-        setConnectionState("active");
-        
-        if (instructionsIncluded) {
-          console.log("Instructions already in token, skipping session.update");
-        }
-        
-        setTimeout(() => {
-          dc.send(JSON.stringify({ type: "response.create" }));
-        }, 100);
-      });
-
-      dc.addEventListener("message", (event) => {
-        try {
-          const data = JSON.parse(event.data);
-
-          if (data.type === "conversation.item.input_audio_transcription.completed") {
-            const text = data.transcript?.trim();
-            if (!text) return;
-
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `user-${Date.now()}`,
-                role: "user",
-                text: text,
-                timestamp: Date.now(),
-              },
-            ]);
-            saveMessageToBackend("user", text);
-          }
-
-          if (data.type === "response.audio_transcript.done") {
-            const text = data.transcript?.trim();
-            if (!text) return;
-
-            setMessages((prev) => [
-              ...prev,
-              {
-                id: `assistant-${Date.now()}`,
-                role: "assistant",
-                text: text,
-                timestamp: Date.now(),
-              },
-            ]);
-            saveMessageToBackend("assistant", text);
-            processAiResponse(text);
-          }
-
-          if (data.type === "error") {
-            console.error("Realtime error:", data.error);
-            setErrorMessage(data.error?.message || "An error occurred");
-          }
-        } catch (err) {
-          console.error("Error parsing message:", err);
-        }
-      });
-
-      dc.addEventListener("close", () => {
-        setConnectionState("ended");
-      });
-
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-
-      const sdpRes = await fetch(
-        "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/sdp",
-          },
-          body: offer.sdp,
-        }
-      );
-
-      if (!sdpRes.ok) {
-        throw new Error("Failed to establish WebRTC connection");
-      }
-
-      const answer: RTCSessionDescriptionInit = {
-        type: "answer",
-        sdp: await sdpRes.text(),
-      };
-      await pc.setRemoteDescription(answer);
+      setConnectionState("active");
     } catch (error: any) {
       console.error("Error starting conversation:", error);
       setErrorMessage(error.message || "Failed to start conversation");
@@ -313,6 +484,7 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
     connectionState,
     errorMessage,
     messages,
+    lessonProgress,
     startConversation,
     stopConversation,
   };
