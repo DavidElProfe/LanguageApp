@@ -1,0 +1,104 @@
+I want you to implement a new experimental architecture for our OpenAI Realtime voice conversation system.
+
+⚠️ IMPORTANT:
+- Create a NEW git branch before making changes (e.g. `feature/realtime-block-reset`).
+- Do NOT delete existing logic unless explicitly required.
+- Prefer small, explicit changes.
+- At the end, give me a detailed summary of everything you changed and why.
+
+
+🎯 GOAL
+
+Improve stability and correctness of a long guided voice lesson by resetting the OpenAI Realtime session every N questions, without changing the UI or breaking the user experience.
+
+The student must NOT notice that the backend session was reset.
+
+
+🧠 CONCEPTUAL MODEL
+
+- The lesson has a global pedagogical question index (authoritative).
+- The OpenAI Realtime session is ephemeral and can be safely reset.
+- Every block of N questions, the Realtime session should be closed and recreated.
+- The UI conversation history must remain intact.
+
+
+📐 SPECIFICATION
+
+1️⃣ Define a block size
+
+Use a constant like:
+const QUESTION_BLOCK_SIZE = 5;
+
+
+2️⃣ Global lesson state (frontend)
+
+Introduce or formalize a lessonStateRef that stores:
+- globalQuestionIndex (absolute, never resets)
+- correctCount
+- incorrectCount
+
+This state must survive Realtime session resets.
+
+
+3️⃣ Session-local state
+
+Track session-relative progress separately (e.g. sessionQuestionOffset).
+
+The Realtime session should only be aware of the current absolute question index it must ask.
+
+
+4️⃣ Reset logic
+
+After a correct answer and question advance, check:
+
+if (globalQuestionIndex % QUESTION_BLOCK_SIZE === 0)
+
+If true:
+- Gracefully close the current WebRTC / Realtime session
+- Create a NEW Realtime session
+- Start it at the current globalQuestionIndex
+
+
+5️⃣ Backend integration
+
+- Use the existing /simple-session endpoint.
+- Pass initialQuestionIndex so the model starts from the correct question.
+- Ensure the system prompt explicitly tells the model:
+  - This is a new session
+  - Ask ONLY the current question
+  - Do NOT summarize or reference previous questions
+
+
+6️⃣ UI continuity
+
+- Do NOT clear the messages array in the UI.
+- Do NOT visually reset the chat.
+- The user must experience the conversation as continuous.
+
+
+7️⃣ Safety & constraints
+
+- Do NOT introduce response.cancel unless absolutely necessary.
+- Do NOT change Whisper or VAD configuration in this iteration.
+- Do NOT modify the question list or lesson content.
+
+
+🧪 EXPECTED OUTCOME
+
+- Reduced model confusion on long lessons
+- Fewer cases of wrong question being asked
+- Cleaner conversational context per block
+- Same UI and UX from the student’s perspective
+
+
+📄 FINAL REPORT
+
+At the end, please report:
+- What files were modified
+- What new state was introduced
+- Where the reset logic lives
+- Any assumptions you made
+- Any edge cases you noticed but did not implement
+
+Do NOT implement extra features beyond what is described.
+Focus on correctness, clarity, and minimal disruption.

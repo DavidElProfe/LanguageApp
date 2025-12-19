@@ -17,6 +17,30 @@ import {
   findQuestionIndex,
 } from "./prompts/simpleConversationQuestions";
 
+// ===== What does → Spanish only guard =====
+
+const WHAT_DOES_START = 24;
+const WHAT_DOES_END = 31;
+
+const ENGLISH_ANSWERS = [
+  "computer",
+  "office",
+  "paper",
+  "employee",
+  "director",
+  "student",
+  "conference room",
+  "classroom",
+];
+
+const isWhatDoesQuestion = (index: number): boolean => {
+  return index >= WHAT_DOES_START && index <= WHAT_DOES_END;
+};
+
+const looksLikeEnglishAnswer = (text: string): boolean => {
+  return ENGLISH_ANSWERS.includes(text.trim().toLowerCase());
+};
+
 export const assistantRouter = Router();
 
 interface SimpleSessionState {
@@ -111,9 +135,9 @@ assistantRouter.get("/realtime-token", async (req, res) => {
             modalities: ["text", "audio"],
             turn_detection: {
               type: "server_vad",
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 900,
+              threshold: 0.65,
+              prefix_padding_ms: 500,
+              silence_duration_ms: 2500,
             },
             input_audio_transcription: {
               model: "whisper-1",
@@ -149,7 +173,7 @@ assistantRouter.get("/realtime-token", async (req, res) => {
       },
       input_audio_transcription: {
         model: "whisper-1",
-        language: "en",
+        //language: "en",
       },
     });
 
@@ -185,7 +209,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 0;
+    let initialQuestionIndex = 25;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);
@@ -221,7 +245,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
       },
       input_audio_transcription: {
         model: "whisper-1",
-        language: "en",
+        //language: "en",
       },
     });
 
@@ -270,7 +294,7 @@ assistantRouter.post(
   async (req, res) => {
     try {
       const { sessionId } = req.params;
-      const { aiTranscript } = req.body;
+      const { aiTranscript, studentTranscript } = req.body;
 
       if (!aiTranscript || typeof aiTranscript !== "string") {
         return res.status(400).json({ error: "aiTranscript is required" });
@@ -285,7 +309,31 @@ assistantRouter.post(
       }
 
       const currentIndex = sessionState.currentQuestionIndex;
-      const detectedIndex = findQuestionIndex(aiTranscript);
+
+      if (
+        typeof studentTranscript === "string" &&
+        isWhatDoesQuestion(currentIndex) &&
+        looksLikeEnglishAnswer(studentTranscript)
+      ) {
+        console.log(
+          `[WhatDoesGuard] BLOCKED English answer on Q${currentIndex + 1}: "${studentTranscript}"`,
+        );
+
+        return res.json({
+          sessionId,
+          previousIndex: currentIndex,
+          currentIndex,
+          advanced: false,
+          guardrailTriggered: true,
+          reason: "english_answer_on_spanish_required_question",
+          correctionInstruction:
+            "Aquí tienes que responder en español. Por ejemplo: 'employee' significa 'empleado'. Intenta otra vez en español.",
+          currentQuestion: getQuestionByIndex(currentIndex),
+        });
+      }
+
+      //const detectedIndex = findQuestionIndex(aiTranscript);
+      const detectedIndex = null;
 
       console.log(
         `[SimpleSession] Processing response for session ${sessionId}`,
