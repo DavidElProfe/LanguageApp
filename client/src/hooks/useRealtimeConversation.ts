@@ -48,7 +48,7 @@ function isWhatDoesQuestion(index: number): boolean {
   return index >= WHAT_DOES_START && index <= WHAT_DOES_END;
 }
 
-function anchorCurrentWhatDoesQuestion(qIndex: number) {
+function getWhatDoesQuestionText(qIndex: number): string | null {
   const questionMap: Record<number, string> = {
     25: "What does computer mean in Spanish?",
     26: "What does office mean?",
@@ -59,31 +59,7 @@ function anchorCurrentWhatDoesQuestion(qIndex: number) {
     31: "What does conference room mean?",
     32: "What does classroom mean?",
   };
-
-  const question = questionMap[qIndex];
-  if (!question) return;
-
-  dcRef.current?.send(
-    JSON.stringify({
-      type: "response.create",
-      response: {
-        instructions: `
-You are correcting the student.
-
-The CURRENT and ONLY active question is:
-"${question}"
-
-The student answered incorrectly or in the wrong language.
-
-Explain briefly in Spanish.
-Give one correct example.
-Then repeat EXACTLY the same question again.
-Do NOT change the question.
-Do NOT move to another question.
-`,
-      },
-    }),
-  );
+  return questionMap[qIndex] || null;
 }
 
 function normalize(text: string): string {
@@ -228,7 +204,15 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
                 timestamp: Date.now(),
               },
             ]);
-            anchorCurrentWhatDoesQuestion(qIndex);
+            const questionText = getWhatDoesQuestionText(qIndex);
+            if (questionText && dcRef.current) {
+              dcRef.current.send(JSON.stringify({
+                type: "response.create",
+                response: {
+                  instructions: `Repeat EXACTLY: "${questionText}"`,
+                },
+              }));
+            }
             return;
           }
 
@@ -237,7 +221,15 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
             !looksLikeValidSpanishMeaning(text, qIndex)
           ) {
             console.log("⛔ Incorrecto → seguir intentando");
-            anchorCurrentWhatDoesQuestion(qIndex);
+            const questionText = getWhatDoesQuestionText(qIndex);
+            if (questionText && dcRef.current) {
+              dcRef.current.send(JSON.stringify({
+                type: "response.create",
+                response: {
+                  instructions: `Repeat EXACTLY: "${questionText}"`,
+                },
+              }));
+            }
             return;
           }
 

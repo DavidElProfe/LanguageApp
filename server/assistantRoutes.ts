@@ -235,7 +235,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 0;
+    let initialQuestionIndex = 1;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);
