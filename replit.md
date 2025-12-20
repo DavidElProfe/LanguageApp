@@ -44,6 +44,8 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
   - State query: `GET /api/assistant/simple-session/:sessionId/state`
   - Hook: `useSimpleConversation.ts`
   - Session cleanup: Expired sessions (>2 hours) are automatically cleaned up
+  - **Block Reset Architecture**: Session resets every 5 questions to reduce model confusion on long lessons. Resets at Q6, Q11, Q16, Q21, Q26, Q31, Q36, Q41, Q46, Q51. UI continuity preserved (messages not cleared).
+  - **Language Guardrail (P25-P32)**: Frontend enforces Spanish-only responses for "What does X mean?" questions. Implemented in `useSimpleConversation.ts` and `useRealtimeConversation.ts`.
 - **Lesson-Based Prompt System**: Unified modular prompt architecture in `server/prompts/` with:
   - `basePrompt.ts`: Short generic base prompt (tutor role, language rules, turn-taking)
   - `lessonPrompts.ts`: 10 lesson-specific prompts (lessons 2-10) with allowed vocabulary and restrictions
