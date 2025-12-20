@@ -86,17 +86,23 @@ Simply ask the current question as if starting fresh.
 `;
 
   if (questionIndex <= 1) {
-    return baseContext + `You are about to start the conversation. Begin with question 1: "${getQuestionByIndex(1)}"
+    return (
+      baseContext +
+      `You are about to start the conversation. Begin with question 1: "${getQuestionByIndex(1)}"
 Do not reference question numbers aloud. Simply ask the question naturally.
 [END INTERNAL ORIENTATION]
-`;
+`
+    );
   }
-  return baseContext + `You are currently at question ${questionIndex} of ${TOTAL_QUESTIONS}.
+  return (
+    baseContext +
+    `You are currently at question ${questionIndex} of ${TOTAL_QUESTIONS}.
 The current question is: "${getQuestionByIndex(questionIndex)}"
 Do not reference question numbers aloud. Simply ask the question naturally.
 Start by asking ONLY this question. Do not recap or summarize anything.
 [END INTERNAL ORIENTATION]
-`;
+`
+  );
 }
 
 setInterval(
@@ -229,7 +235,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 1;
+    let initialQuestionIndex = 24;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);

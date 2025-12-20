@@ -48,6 +48,44 @@ function isWhatDoesQuestion(index: number): boolean {
   return index >= WHAT_DOES_START && index <= WHAT_DOES_END;
 }
 
+function anchorCurrentWhatDoesQuestion(qIndex: number) {
+  const questionMap: Record<number, string> = {
+    25: "What does computer mean in Spanish?",
+    26: "What does office mean?",
+    27: "What does paper mean?",
+    28: "What does employee mean?",
+    29: "What does director mean?",
+    30: "What does student mean?",
+    31: "What does conference room mean?",
+    32: "What does classroom mean?",
+  };
+
+  const question = questionMap[qIndex];
+  if (!question) return;
+
+  dcRef.current?.send(
+    JSON.stringify({
+      type: "response.create",
+      response: {
+        instructions: `
+You are correcting the student.
+
+The CURRENT and ONLY active question is:
+"${question}"
+
+The student answered incorrectly or in the wrong language.
+
+Explain briefly in Spanish.
+Give one correct example.
+Then repeat EXACTLY the same question again.
+Do NOT change the question.
+Do NOT move to another question.
+`,
+      },
+    }),
+  );
+}
+
 function normalize(text: string): string {
   return text
     .toLowerCase()
@@ -190,6 +228,7 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
                 timestamp: Date.now(),
               },
             ]);
+            anchorCurrentWhatDoesQuestion(qIndex);
             return;
           }
 
@@ -198,6 +237,7 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
             !looksLikeValidSpanishMeaning(text, qIndex)
           ) {
             console.log("⛔ Incorrecto → seguir intentando");
+            anchorCurrentWhatDoesQuestion(qIndex);
             return;
           }
 
