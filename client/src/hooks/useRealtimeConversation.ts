@@ -105,6 +105,8 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
   const canAdvanceRef = useRef(true);
   const answerTurnRef = useRef(0);
   const lastApprovedTurnRef = useRef<number | null>(null);
+  // 🕒 Marca cuándo el usuario EMPIEZA a hablar
+  const speechStartedAtRef = useRef<number | null>(null);
 
   /* ===================== HELPERS ===================== */
 
@@ -174,30 +176,47 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
 
       dc.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        // 🎤 Usuario empezó a hablar
+        if (data.type === "input_audio_buffer.speech_started") {
+          speechStartedAtRef.current = Date.now();
+          return;
+        }
 
         /* ---------- STUDENT ---------- */
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
-          console.log("HOLAAAA: RAW TRANSCRIPT:", data.transcript); //<- LOG
-          answerTurnRef.current += 1;
-          const myTurn = answerTurnRef.current;
+          console.log("HOLAAAA: RAW TRANSCRIPT:", data.transcript);
 
           const text = data.transcript?.trim();
           if (!text) return;
+          if (text.length < 3) return;
+          if (!/[a-zA-Z]/.test(text)) return;
+
+          const ts = speechStartedAtRef.current ?? Date.now();
+          speechStartedAtRef.current = null;
+
+          // ✅ MOSTRAR SIEMPRE LO QUE DIJO EL USUARIO
+          setMessages((m) => [
+            ...m,
+            {
+              id: crypto.randomUUID(),
+              role: "user",
+              text,
+              timestamp: ts,
+            },
+          ]);
+
+          answerTurnRef.current += 1;
+          const myTurn = answerTurnRef.current;
 
           const qIndex = currentQuestionIndexRef.current;
           canAdvanceRef.current = false;
 
+          // ❌ RESPONDIÓ EN INGLÉS CUANDO DEBÍA SER ESPAÑOL
           if (isWhatDoesQuestion(qIndex) && looksLikeEnglish(text)) {
             setMessages((m) => [
               ...m,
-              {
-                id: crypto.randomUUID(),
-                role: "user",
-                text,
-                timestamp: Date.now(),
-              },
               {
                 id: crypto.randomUUID(),
                 role: "assistant",
@@ -205,6 +224,7 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
                 timestamp: Date.now(),
               },
             ]);
+
             const questionText = getWhatDoesQuestionText(qIndex);
             if (questionText && dcRef.current) {
               dcRef.current.send(
@@ -219,11 +239,11 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
             return;
           }
 
+          // ❌ RESPUESTA INCORRECTA EN “WHAT DOES”
           if (
             isWhatDoesQuestion(qIndex) &&
             !looksLikeValidSpanishMeaning(text, qIndex)
           ) {
-            console.log("⛔ Incorrecto → seguir intentando");
             const questionText = getWhatDoesQuestionText(qIndex);
             if (questionText && dcRef.current) {
               dcRef.current.send(
@@ -243,36 +263,16 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
           lastApprovedTurnRef.current = myTurn;
           lastUserTranscriptRef.current = text;
 
-          requestModelResponse(); // 👈 AHORA SÍ
+          requestModelResponse();
           return;
         }
 
         /* ---------- AI ---------- */
         if (data.type === "response.audio_transcript.done") {
-          if (
-            !canAdvanceRef.current ||
-            lastApprovedTurnRef.current !== answerTurnRef.current
-          ) {
-            console.log("⛔ IGNORING AI RESPONSE (outdated)");
-            return;
-          }
-
           const assistantText = data.transcript?.trim();
           if (!assistantText) return;
 
-          if (lastUserTranscriptRef.current) {
-            setMessages((m) => [
-              ...m,
-              {
-                id: crypto.randomUUID(),
-                role: "user",
-                text: lastUserTranscriptRef.current!,
-                timestamp: Date.now(),
-              },
-            ]);
-            lastUserTranscriptRef.current = null;
-          }
-
+          // ✅ SIEMPRE mostrar lo que dice la IA (apoyo visual)
           setMessages((m) => [
             ...m,
             {
@@ -282,6 +282,15 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
               timestamp: Date.now(),
             },
           ]);
+
+          // 🔒 SOLO controlar el avance de preguntas (no la visualización)
+          if (
+            !canAdvanceRef.current ||
+            lastApprovedTurnRef.current !== answerTurnRef.current
+          ) {
+            console.log("⛔ AI response shown but NOT advancing (outdated)");
+            return;
+          }
 
           currentQuestionIndexRef.current += 1;
         }
