@@ -54,8 +54,8 @@ const LESSON_OPTIONS = [
 export default function ChatPartner() {
   const [, setLocation] = useLocation();
   const [selectedLesson, setSelectedLesson] = useState(1);
-  // Voice-only mode by default. Set to true to show transcription (debug mode).
-  const [showDebugChat, setShowDebugChat] = useState(false);
+  // Show conversation text by default for pedagogical support
+  const [showDebugChat, setShowDebugChat] = useState(true);
   const [recapRequested, setRecapRequested] = useState(false);
 
   const {
@@ -94,7 +94,25 @@ export default function ChatPartner() {
                   </div>
                   <CardTitle className="text-2xl">Práctica de Voz</CardTitle>
                 </div>
-                {/* Debug toggle - allows showing/hiding text transcription */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowDebugChat(!showDebugChat)}
+                  className="text-muted-foreground"
+                  data-testid="button-toggle-transcript"
+                >
+                  {showDebugChat ? (
+                    <>
+                      <EyeOff className="h-4 w-4 mr-1" />
+                      Ocultar texto
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="h-4 w-4 mr-1" />
+                      Ver texto
+                    </>
+                  )}
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
