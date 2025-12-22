@@ -179,6 +179,7 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
+          console.log("HOLAAAA: RAW TRANSCRIPT:", data.transcript); //<- LOG
           answerTurnRef.current += 1;
           const myTurn = answerTurnRef.current;
 
@@ -206,12 +207,14 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
             ]);
             const questionText = getWhatDoesQuestionText(qIndex);
             if (questionText && dcRef.current) {
-              dcRef.current.send(JSON.stringify({
-                type: "response.create",
-                response: {
-                  instructions: `Repeat EXACTLY: "${questionText}"`,
-                },
-              }));
+              dcRef.current.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    instructions: `Repeat EXACTLY: "${questionText}"`,
+                  },
+                }),
+              );
             }
             return;
           }
@@ -223,12 +226,14 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
             console.log("⛔ Incorrecto → seguir intentando");
             const questionText = getWhatDoesQuestionText(qIndex);
             if (questionText && dcRef.current) {
-              dcRef.current.send(JSON.stringify({
-                type: "response.create",
-                response: {
-                  instructions: `Repeat EXACTLY: "${questionText}"`,
-                },
-              }));
+              dcRef.current.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    instructions: `Repeat EXACTLY: "${questionText}"`,
+                  },
+                }),
+              );
             }
             return;
           }

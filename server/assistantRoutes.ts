@@ -199,7 +199,6 @@ assistantRouter.get("/realtime-token", async (req, res) => {
       },
       input_audio_transcription: {
         model: "whisper-1",
-        //language: "en",
       },
     });
 
@@ -235,7 +234,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 1;
+    let initialQuestionIndex = 25;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);
