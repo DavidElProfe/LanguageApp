@@ -1,15 +1,6 @@
 import { Router } from "express";
 import OpenAI from "openai";
-import {
-  getBasePrompt,
-  getLessonPrompt,
-  validateLesson,
-  TOTAL_LESSONS,
-  getLesson1MasterPrompt,
-  getLesson1Step,
-  type Lesson1Step,
-} from "./prompts/promptManager";
-import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/simpleConversationPrompt";
+import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/lesson1Prompt";
 import {
   SIMPLE_CONVERSATION_QUESTIONS,
   TOTAL_QUESTIONS,
