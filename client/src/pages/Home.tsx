@@ -27,7 +27,7 @@ export default function Home() {
               <Button
                 size="lg"
                 className="text-lg px-8 py-6"
-                onClick={() => setLocation('/')}
+                onClick={() => setLocation('/courses')}
                 data-testid="button-start-practicing"
               >
                 {t('hero.cta')}
