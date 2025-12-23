@@ -94,25 +94,6 @@ export default function ChatPartner() {
                   </div>
                   <CardTitle className="text-2xl">Práctica de Voz</CardTitle>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowDebugChat(!showDebugChat)}
-                  className="text-muted-foreground"
-                  data-testid="button-toggle-transcript"
-                >
-                  {showDebugChat ? (
-                    <>
-                      <EyeOff className="h-4 w-4 mr-1" />
-                      Ocultar texto
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="h-4 w-4 mr-1" />
-                      Ver texto
-                    </>
-                  )}
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
