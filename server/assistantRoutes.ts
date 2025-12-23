@@ -117,7 +117,7 @@ assistantRouter.get("/lesson1-session", async (req, res) => {
     console.log("=== LESSON 1 SESSION REQUEST ===");
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 1;
+    let initialQuestionIndex = 6;
 
     if (initialQuestionIndexParam) {
       const parsed = parseInt(initialQuestionIndexParam as string, 10);
@@ -197,7 +197,9 @@ assistantRouter.get("/lesson1-session", async (req, res) => {
 
 assistantRouter.get("/simple-session", async (req, res) => {
   try {
-    console.log("=== SIMPLE SESSION REQUEST (legacy, redirecting to lesson1) ===");
+    console.log(
+      "=== SIMPLE SESSION REQUEST (legacy, redirecting to lesson1) ===",
+    );
 
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
     let initialQuestionIndex = 1;
@@ -298,9 +300,7 @@ assistantRouter.post(
 
       const detectedIndex = findQuestionIndex(aiTranscript);
 
-      console.log(
-        `[Lesson1] Processing response for session ${sessionId}`,
-      );
+      console.log(`[Lesson1] Processing response for session ${sessionId}`);
       console.log(
         `[Lesson1] Current index: ${currentIndex}, Detected in AI response: ${detectedIndex}`,
       );
