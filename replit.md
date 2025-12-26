@@ -44,6 +44,15 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
   - State query: `GET /api/assistant/simple-session/:sessionId/state`
   - Hook: `useSimpleConversation.ts`
   - Session cleanup: Expired sessions (>2 hours) are automatically cleaned up
+- **Multi-Agent AI Architecture** (Experimental): Modular multi-agent system in `server/agents/` and `server/orchestrator/` with:
+  - `Orchestrator`: Central decision-maker that coordinates all agents
+  - `ValidationAgent`: Validates user input for correctness and safety
+  - `ConversationAgent`: Generates domain-specific conversational responses
+  - `PedagogyAgent`: Explains language concepts and mistakes
+  - `ControlAgent`: Enforces system rules and constraints
+  - Externalized prompts in `server/agents/prompts/`
+  - All agents communicate only through the Orchestrator
+  - Designed for isolation and reversibility (experimental branch work)
 - **Lesson-Based Prompt System**: Unified modular prompt architecture in `server/prompts/` with:
   - `basePrompt.ts`: Short generic base prompt (tutor role, language rules, turn-taking)
   - `lessonPrompts.ts`: 10 lesson-specific prompts (lessons 2-10) with allowed vocabulary and restrictions
