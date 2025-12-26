@@ -61,31 +61,124 @@ interface Lesson2SessionState {
   currentPart: number;
   currentQuestionInPart: number;
   lastAdvancedAt: number;
+  lastUserInputAt: number;
   createdAt: number;
 }
 
 const simpleSessionStates = new Map<string, SimpleSessionState>();
 const lesson2SessionStates = new Map<string, Lesson2SessionState>();
 
+interface Lesson2AdvanceResult {
+  success: boolean;
+  blocked?: boolean;
+  blockReason?: string;
+  previousPart: number;
+  previousQuestion: number;
+  currentPart: number;
+  currentQuestionInPart: number;
+  totalQuestionsInPart: number;
+  currentQuestion: string | null;
+  advanced: boolean;
+  partAdvanced: boolean;
+  lessonComplete: boolean;
+  nextContext: string | null;
+}
+
+function advanceLesson2Session(
+  sessionState: Lesson2SessionState,
+  sessionId: string,
+  skipGuard: boolean = false,
+): Lesson2AdvanceResult {
+  const now = Date.now();
+  const currentPart = sessionState.currentPart;
+  const currentQ = sessionState.currentQuestionInPart;
+
+  if (!skipGuard && sessionState.lastUserInputAt <= sessionState.lastAdvancedAt) {
+    console.log(`[L2][BLOCKED] session=${sessionId} - No new user input since last advance`);
+    return {
+      success: false,
+      blocked: true,
+      blockReason: "No new user input since last advance",
+      previousPart: currentPart,
+      previousQuestion: currentQ,
+      currentPart,
+      currentQuestionInPart: currentQ,
+      totalQuestionsInPart: getLesson2PartQuestionCount(currentPart),
+      currentQuestion: getLesson2Question(currentPart, currentQ),
+      advanced: false,
+      partAdvanced: false,
+      lessonComplete: false,
+      nextContext: null,
+    };
+  }
+
+  console.log(
+    `[L2][ADVANCE_ATTEMPT] session=${sessionId} ` +
+      `lastUserInputAt=${sessionState.lastUserInputAt} ` +
+      `lastAdvancedAt=${sessionState.lastAdvancedAt}`,
+  );
+
+  const totalQInPart = getLesson2PartQuestionCount(currentPart);
+  let advanced = false;
+  let partAdvanced = false;
+  let lessonComplete = false;
+
+  if (currentQ < totalQInPart) {
+    sessionState.currentQuestionInPart = currentQ + 1;
+    sessionState.lastAdvancedAt = now;
+    advanced = true;
+    console.log(`[L2][ADVANCED] session=${sessionId} PART ${currentPart}, Q ${currentQ} → ${sessionState.currentQuestionInPart}`);
+  } else if (currentPart < 8) {
+    sessionState.currentPart = currentPart + 1;
+    sessionState.currentQuestionInPart = 1;
+    sessionState.lastAdvancedAt = now;
+    advanced = true;
+    partAdvanced = true;
+    console.log(`[L2][ADVANCED] session=${sessionId} PART ${currentPart} → ${sessionState.currentPart}`);
+  } else {
+    lessonComplete = true;
+    console.log(`[L2][COMPLETE] session=${sessionId} Lesson 2 complete!`);
+  }
+
+  const newPart = sessionState.currentPart;
+  const newQ = sessionState.currentQuestionInPart;
+
+  return {
+    success: true,
+    previousPart: currentPart,
+    previousQuestion: currentQ,
+    currentPart: newPart,
+    currentQuestionInPart: newQ,
+    totalQuestionsInPart: getLesson2PartQuestionCount(newPart),
+    currentQuestion: getLesson2Question(newPart, newQ),
+    advanced,
+    partAdvanced,
+    lessonComplete,
+    nextContext: advanced ? generateLesson2Context(newPart, newQ) : null,
+  };
+}
+
 function getOrCreateLesson2SessionState(
   sessionId: string,
   initialPart: number = 1,
-  initialQuestion: number = 1
+  initialQuestion: number = 1,
 ): Lesson2SessionState {
   if (!lesson2SessionStates.has(sessionId)) {
     const validPart = Math.max(1, Math.min(initialPart, 8));
     const maxQ = getLesson2PartQuestionCount(validPart);
     const validQ = Math.max(1, Math.min(initialQuestion, maxQ));
-    
+
     const state: Lesson2SessionState = {
       currentPart: validPart,
       currentQuestionInPart: validQ,
       lastAdvancedAt: 0,
+      lastUserInputAt: 0,
       createdAt: Date.now(),
     };
+
     lesson2SessionStates.set(sessionId, state);
     console.log(
-      `[Lesson2Session] Created session ${sessionId} at PART ${state.currentPart}, question ${state.currentQuestionInPart}`
+      `[Lesson2Session] Created session ${sessionId} at PART ${state.currentPart}, question ${state.currentQuestionInPart}`,
     );
   }
   return lesson2SessionStates.get(sessionId)!;
@@ -300,7 +393,9 @@ assistantRouter.get("/simple-session", async (req, res) => {
       const maxQ = getLesson2PartQuestionCount(partNumber);
       if (!isNaN(parsed) && parsed >= 1 && parsed <= maxQ) {
         questionInPart = parsed;
-        console.log(`[SimpleSession] Lesson 2 PART ${partNumber} starting at question ${questionInPart}`);
+        console.log(
+          `[SimpleSession] Lesson 2 PART ${partNumber} starting at question ${questionInPart}`,
+        );
       }
     }
 
@@ -318,18 +413,27 @@ assistantRouter.get("/simple-session", async (req, res) => {
     }
 
     const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
+
     let fullInstructions: string;
     let lesson2State: Lesson2SessionState | null = null;
     let sessionState: SimpleSessionState | null = null;
 
     if (lessonNumber === 2) {
-      lesson2State = getOrCreateLesson2SessionState(sessionId, partNumber, questionInPart);
-      const lesson2Context = generateLesson2Context(lesson2State.currentPart, lesson2State.currentQuestionInPart);
+      lesson2State = getOrCreateLesson2SessionState(
+        sessionId,
+        partNumber,
+        questionInPart,
+      );
+      const lesson2Context = generateLesson2Context(
+        lesson2State.currentPart,
+        lesson2State.currentQuestionInPart,
+      );
       fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
     } else {
       sessionState = getOrCreateSessionState(sessionId, initialQuestionIndex);
-      const silentContext = generateSilentContext(sessionState.currentQuestionIndex);
+      const silentContext = generateSilentContext(
+        sessionState.currentQuestionIndex,
+      );
       fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
     }
 
@@ -357,7 +461,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
 
     if (lessonNumber === 2 && lesson2State) {
       console.log(
-        `[Lesson2Session] Session ${sessionId} ready at PART ${lesson2State.currentPart}, question ${lesson2State.currentQuestionInPart}`
+        `[Lesson2Session] Session ${sessionId} ready at PART ${lesson2State.currentPart}, question ${lesson2State.currentQuestionInPart}`,
       );
       res.json({
         token: response.client_secret.value,
@@ -365,13 +469,15 @@ assistantRouter.get("/simple-session", async (req, res) => {
         lesson: lessonNumber,
         part: lesson2State.currentPart,
         currentQuestionInPart: lesson2State.currentQuestionInPart,
-        totalQuestionsInPart: getLesson2PartQuestionCount(lesson2State.currentPart),
+        totalQuestionsInPart: getLesson2PartQuestionCount(
+          lesson2State.currentPart,
+        ),
         instructionsIncluded: true,
         sessionId: sessionId,
       });
     } else if (sessionState) {
       console.log(
-        `[SimpleSession] Session ${sessionId} ready at question ${sessionState.currentQuestionIndex}`
+        `[SimpleSession] Session ${sessionId} ready at question ${sessionState.currentQuestionIndex}`,
       );
       res.json({
         token: response.client_secret.value,
@@ -522,70 +628,53 @@ assistantRouter.get("/simple-session/:sessionId/state", (req, res) => {
   });
 });
 
+assistantRouter.post("/lesson2-session/:sessionId/user-input", (req, res) => {
+  const { sessionId } = req.params;
+
+  const sessionState = lesson2SessionStates.get(sessionId);
+  if (!sessionState) {
+    return res.status(404).json({ error: "Lesson 2 session not found" });
+  }
+
+  sessionState.lastUserInputAt = Date.now();
+
+  console.log(
+    `[Lesson2Session] User input registered for session ${sessionId}`,
+  );
+
+  res.json({ ok: true });
+});
+
 assistantRouter.post(
   "/lesson2-session/:sessionId/advance",
   async (req, res) => {
     try {
       const { sessionId } = req.params;
-
       const sessionState = lesson2SessionStates.get(sessionId);
+
       if (!sessionState) {
         return res.status(404).json({ error: "Lesson 2 session not found" });
       }
 
-      const currentPart = sessionState.currentPart;
-      const currentQ = sessionState.currentQuestionInPart;
-      const totalQInPart = getLesson2PartQuestionCount(currentPart);
+      const result = advanceLesson2Session(sessionState, sessionId);
 
-      let advanced = false;
-      let partAdvanced = false;
-      let lessonComplete = false;
-
-      const now = Date.now();
-
-      if (currentQ < totalQInPart) {
-        sessionState.currentQuestionInPart = currentQ + 1;
-        sessionState.lastAdvancedAt = now;
-        advanced = true;
-        console.log(
-          `[Lesson2Session] Advanced to PART ${currentPart}, question ${sessionState.currentQuestionInPart}`
-        );
-      } else if (currentPart < 8) {
-        sessionState.currentPart = currentPart + 1;
-        sessionState.currentQuestionInPart = 1;
-        sessionState.lastAdvancedAt = now;
-        advanced = true;
-        partAdvanced = true;
-        console.log(
-          `[Lesson2Session] Advanced to PART ${sessionState.currentPart}`
-        );
-      } else {
-        lessonComplete = true;
-        console.log(`[Lesson2Session] Lesson 2 complete!`);
+      if (result.blocked) {
+        return res.status(409).json({
+          error: result.blockReason,
+          currentPart: result.currentPart,
+          currentQuestionInPart: result.currentQuestionInPart,
+        });
       }
-
-      const newPart = sessionState.currentPart;
-      const newQ = sessionState.currentQuestionInPart;
-      const newContext = generateLesson2Context(newPart, newQ);
 
       res.json({
         sessionId,
-        previousPart: currentPart,
-        previousQuestion: currentQ,
-        currentPart: newPart,
-        currentQuestionInPart: newQ,
-        totalQuestionsInPart: getLesson2PartQuestionCount(newPart),
-        currentQuestion: getLesson2Question(newPart, newQ),
-        advanced,
-        partAdvanced,
-        lessonComplete,
-        nextContext: advanced ? newContext : null,
+        ...result,
       });
     } catch (error: any) {
       console.error("[Lesson2Session] Error advancing:", error);
       res.status(500).json({ error: "Failed to advance", message: error.message });
     }
-  }
+  },
 );
 
 assistantRouter.get("/lesson2-session/:sessionId/state", (req, res) => {
@@ -608,6 +697,82 @@ assistantRouter.get("/lesson2-session/:sessionId/state", (req, res) => {
     partName: getLesson2Part(part)?.name,
     createdAt: sessionState.createdAt,
   });
+});
+
+assistantRouter.post("/lesson2-test", async (req, res) => {
+  try {
+    const { sessionId, studentMessage, part, question } = req.body;
+
+    if (!studentMessage || typeof studentMessage !== "string") {
+      return res.status(400).json({ error: "studentMessage is required" });
+    }
+
+    const sid = sessionId || `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const initialPart = part ? parseInt(part, 10) : 1;
+    const initialQuestion = question ? parseInt(question, 10) : 1;
+
+    const sessionState = getOrCreateLesson2SessionState(sid, initialPart, initialQuestion);
+    const now = Date.now();
+
+    sessionState.lastUserInputAt = now;
+    console.log(`[L2-TEST] User input: "${studentMessage}" | Session: ${sid}`);
+
+    const currentPart = sessionState.currentPart;
+    const currentQ = sessionState.currentQuestionInPart;
+    const context = generateLesson2Context(currentPart, currentQ);
+    const currentQuestion = getLesson2Question(currentPart, currentQ);
+    const partInfo = getLesson2Part(currentPart);
+
+    const systemPrompt = `${SIMPLE_CONVERSATION_PROMPT_2}
+
+${context}
+
+You are currently asking the student: "${currentQuestion}"
+Part: ${partInfo?.name || `PART ${currentPart}`}
+
+Respond naturally to the student's answer. If correct, acknowledge and move on. If incorrect, gently correct them in Spanish and ask again.`;
+
+    const openai = new OpenAI();
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      temperature: 0.3,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: studentMessage },
+      ],
+    });
+
+    const aiResponse = completion.choices[0]?.message?.content || "";
+    console.log(`[L2-TEST] AI response: "${aiResponse.substring(0, 100)}..."`);
+
+    const advanceResult = advanceLesson2Session(sessionState, sid);
+
+    res.json({
+      sessionId: sid,
+      studentMessage,
+      aiResponse,
+      previousState: {
+        part: advanceResult.previousPart,
+        question: advanceResult.previousQuestion,
+        questionText: currentQuestion,
+        partName: partInfo?.name,
+      },
+      currentState: {
+        part: advanceResult.currentPart,
+        question: advanceResult.currentQuestionInPart,
+        questionText: advanceResult.currentQuestion,
+        partName: getLesson2Part(advanceResult.currentPart)?.name,
+        totalQuestionsInPart: advanceResult.totalQuestionsInPart,
+      },
+      advanced: advanceResult.advanced,
+      partAdvanced: advanceResult.partAdvanced,
+      lessonComplete: advanceResult.lessonComplete,
+      blocked: advanceResult.blocked,
+    });
+  } catch (error: any) {
+    console.error("[L2-TEST] Error:", error);
+    res.status(500).json({ error: "Test failed", message: error.message });
+  }
 });
 
 interface TextChatMessage {
