@@ -34,17 +34,26 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **AI Text Chat Feature**: Text-based alternative to voice chat using OpenAI Chat Completions API (gpt-4o). Uses the exact same lesson-based prompt system as voice chat. Available at `/text-chat` route. Useful for testing without audio or in public places.
 - **Simple Mode (MVP)**: Voice conversation mode using the ChatPartner component at `/` route. Supports multiple lessons with explicit backend question flow control:
   - **Lesson 1**: Uses `simpleConversationPrompt.ts` with 52 ordered questions
-  - **Lesson 2**: Uses `simpleConversationPrompt2.ts` with 8 PARTS (Making Friends, Vocabulary Practice, Role Play, etc.)
+    - Backend tracks `currentQuestionIndex` per session in `simpleSessionStates` Map
+    - Endpoint: `/api/assistant/simple-session?lesson=1&initialQuestionIndex=N`
+  - **Lesson 2**: Uses `simpleConversationPrompt2.ts` with 8 PARTS containing 160+ questions
+    - Part 1: Making Friends (37 questions)
+    - Part 2: Vocabulary - People (30 questions)
+    - Part 3: Vocabulary - Classroom Objects (20 questions)
+    - Part 4: Role Play - Shopping (12 scripted lines)
+    - Part 5: Relevance/Personalization (4 questions)
+    - Part 6: Practicing Numbers (21 questions)
+    - Part 7: Practicing Colors (12 questions)
+    - Part 8: Making Small Talk (24 questions)
+    - Backend tracks `currentPart` and `currentQuestionInPart` per session in `lesson2SessionStates` Map
+    - **Automatic PART advancement**: Questions advance automatically within each PART, then auto-advance to next PART
+    - Questions defined in `server/prompts/lesson2Questions.ts` with helper functions
+    - Endpoint: `/api/assistant/simple-session?lesson=2&part=N&question=N` (part/question for testing)
+    - Advance endpoint: `POST /api/assistant/lesson2-session/:sessionId/advance`
+    - State query: `GET /api/assistant/lesson2-session/:sessionId/state`
   - Questions in English, corrections in Spanish
-  - Backend tracks `currentQuestionIndex` per session in memory (`simpleSessionStates` Map)
-  - Questions extracted to `server/prompts/simpleConversationQuestions.ts` for index-based access
   - Silent orientation context injected into prompt (AI knows its position without mentioning numbers)
-  - Question advancement detected by comparing AI output with expected next question
-  - Automatic recap at the end with feedback in Spanish
-  - Endpoint: `/api/assistant/simple-session` (accepts `?lesson=N` and `?initialQuestionIndex=N` for testing)
-  - Process response: `POST /api/assistant/simple-session/:sessionId/process-response`
-  - State query: `GET /api/assistant/simple-session/:sessionId/state`
-  - Hook: `useRealtimeConversation.ts` (passes lesson parameter)
+  - Hook: `useRealtimeConversation.ts` (passes lesson and part parameters)
   - Session cleanup: Expired sessions (>2 hours) are automatically cleaned up
 - **Multi-Agent AI Architecture** (Experimental): Modular multi-agent system in `server/agents/` and `server/orchestrator/` with:
   - `Orchestrator`: Central decision-maker that coordinates all agents

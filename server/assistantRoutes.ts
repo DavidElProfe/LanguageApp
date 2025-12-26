@@ -522,6 +522,94 @@ assistantRouter.get("/simple-session/:sessionId/state", (req, res) => {
   });
 });
 
+assistantRouter.post(
+  "/lesson2-session/:sessionId/advance",
+  async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+
+      const sessionState = lesson2SessionStates.get(sessionId);
+      if (!sessionState) {
+        return res.status(404).json({ error: "Lesson 2 session not found" });
+      }
+
+      const currentPart = sessionState.currentPart;
+      const currentQ = sessionState.currentQuestionInPart;
+      const totalQInPart = getLesson2PartQuestionCount(currentPart);
+
+      let advanced = false;
+      let partAdvanced = false;
+      let lessonComplete = false;
+
+      const now = Date.now();
+
+      if (currentQ < totalQInPart) {
+        sessionState.currentQuestionInPart = currentQ + 1;
+        sessionState.lastAdvancedAt = now;
+        advanced = true;
+        console.log(
+          `[Lesson2Session] Advanced to PART ${currentPart}, question ${sessionState.currentQuestionInPart}`
+        );
+      } else if (currentPart < 8) {
+        sessionState.currentPart = currentPart + 1;
+        sessionState.currentQuestionInPart = 1;
+        sessionState.lastAdvancedAt = now;
+        advanced = true;
+        partAdvanced = true;
+        console.log(
+          `[Lesson2Session] Advanced to PART ${sessionState.currentPart}`
+        );
+      } else {
+        lessonComplete = true;
+        console.log(`[Lesson2Session] Lesson 2 complete!`);
+      }
+
+      const newPart = sessionState.currentPart;
+      const newQ = sessionState.currentQuestionInPart;
+      const newContext = generateLesson2Context(newPart, newQ);
+
+      res.json({
+        sessionId,
+        previousPart: currentPart,
+        previousQuestion: currentQ,
+        currentPart: newPart,
+        currentQuestionInPart: newQ,
+        totalQuestionsInPart: getLesson2PartQuestionCount(newPart),
+        currentQuestion: getLesson2Question(newPart, newQ),
+        advanced,
+        partAdvanced,
+        lessonComplete,
+        nextContext: advanced ? newContext : null,
+      });
+    } catch (error: any) {
+      console.error("[Lesson2Session] Error advancing:", error);
+      res.status(500).json({ error: "Failed to advance", message: error.message });
+    }
+  }
+);
+
+assistantRouter.get("/lesson2-session/:sessionId/state", (req, res) => {
+  const { sessionId } = req.params;
+  const sessionState = lesson2SessionStates.get(sessionId);
+
+  if (!sessionState) {
+    return res.status(404).json({ error: "Lesson 2 session not found" });
+  }
+
+  const part = sessionState.currentPart;
+  const q = sessionState.currentQuestionInPart;
+
+  res.json({
+    sessionId,
+    currentPart: part,
+    currentQuestionInPart: q,
+    totalQuestionsInPart: getLesson2PartQuestionCount(part),
+    currentQuestion: getLesson2Question(part, q),
+    partName: getLesson2Part(part)?.name,
+    createdAt: sessionState.createdAt,
+  });
+});
+
 interface TextChatMessage {
   role: "user" | "assistant";
   content: string;

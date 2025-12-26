@@ -101,6 +101,9 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const currentQuestionIndexRef = useRef<number>(0);
   const lastUserTranscriptRef = useRef<string | null>(null);
   const isRecapRequestedRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(null);
+  const currentPartRef = useRef<number>(1);
+  const currentQuestionInPartRef = useRef<number>(1);
 
   const canAdvanceRef = useRef(true);
   const answerTurnRef = useRef(0);
@@ -151,8 +154,16 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
       setConnectionState("connecting");
 
       const tokenRes = await fetch(`/api/assistant/simple-session?lesson=${lesson}&part=${part}`);
-      const { token, currentQuestionIndex } = await tokenRes.json();
-      currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
+      const response = await tokenRes.json();
+      const { token, sessionId, currentQuestionIndex, currentQuestionInPart, part: responsePart } = response;
+      
+      sessionIdRef.current = sessionId;
+      if (lesson === 2) {
+        currentPartRef.current = responsePart ?? part;
+        currentQuestionInPartRef.current = currentQuestionInPart ?? 1;
+      } else {
+        currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
+      }
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
@@ -274,7 +285,6 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           const assistantText = data.transcript?.trim();
           if (!assistantText) return;
 
-          // ✅ SIEMPRE mostrar lo que dice la IA (apoyo visual)
           setMessages((m) => [
             ...m,
             {
@@ -285,7 +295,6 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
             },
           ]);
 
-          // 🔒 SOLO controlar el avance de preguntas (no la visualización)
           if (
             !canAdvanceRef.current ||
             lastApprovedTurnRef.current !== answerTurnRef.current
@@ -294,7 +303,30 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
             return;
           }
 
-          currentQuestionIndexRef.current += 1;
+          if (lesson === 2 && sessionIdRef.current) {
+            fetch(`/api/assistant/lesson2-session/${sessionIdRef.current}/advance`, {
+              method: "POST",
+            })
+              .then((res) => res.json())
+              .then((advanceData) => {
+                if (advanceData.advanced) {
+                  currentPartRef.current = advanceData.currentPart;
+                  currentQuestionInPartRef.current = advanceData.currentQuestionInPart;
+                  console.log(
+                    `[Lesson2] Advanced to PART ${advanceData.currentPart}, Q${advanceData.currentQuestionInPart}`
+                  );
+                  if (advanceData.partAdvanced) {
+                    console.log(`[Lesson2] PART changed!`);
+                  }
+                  if (advanceData.lessonComplete) {
+                    console.log(`[Lesson2] Lesson complete!`);
+                  }
+                }
+              })
+              .catch((err) => console.error("[Lesson2] Advance error:", err));
+          } else {
+            currentQuestionIndexRef.current += 1;
+          }
         }
       };
 
