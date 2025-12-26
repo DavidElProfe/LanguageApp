@@ -121,7 +121,9 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
   /* ===================== CLEANUP ===================== */
 
   useEffect(() => {
-    return () => stopConversation().catch(console.error);
+    return () => {
+      stopConversation().catch(console.error);
+    };
   }, []);
 
   const stopConversation = async () => {
@@ -148,7 +150,7 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
     try {
       setConnectionState("connecting");
 
-      const tokenRes = await fetch("/api/assistant/simple-session");
+      const tokenRes = await fetch(`/api/assistant/simple-session?lesson=${lesson}`);
       const { token, currentQuestionIndex } = await tokenRes.json();
       currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
 

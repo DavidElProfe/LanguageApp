@@ -10,6 +10,7 @@ import {
   type Lesson1Step,
 } from "./prompts/promptManager";
 import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/simpleConversationPrompt";
+import { SIMPLE_CONVERSATION_PROMPT_2 } from "./prompts/simpleConversationPrompt2";
 import {
   SIMPLE_CONVERSATION_QUESTIONS,
   TOTAL_QUESTIONS,
@@ -233,6 +234,16 @@ assistantRouter.get("/simple-session", async (req, res) => {
   try {
     console.log("=== SIMPLE SESSION REQUEST ===");
 
+    const lessonParam = req.query.lesson;
+    let lessonNumber = 1;
+    if (lessonParam) {
+      const parsed = parseInt(lessonParam as string, 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 2) {
+        lessonNumber = parsed;
+      }
+    }
+    console.log(`[SimpleSession] Using lesson ${lessonNumber}`);
+
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
     let initialQuestionIndex = 1;
 
@@ -252,10 +263,15 @@ assistantRouter.get("/simple-session", async (req, res) => {
       initialQuestionIndex,
     );
 
-    const silentContext = generateSilentContext(
-      sessionState.currentQuestionIndex,
-    );
-    const fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
+    let fullInstructions: string;
+    if (lessonNumber === 2) {
+      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + "\n\nYou are currently in PART 1. Begin with the first question.";
+    } else {
+      const silentContext = generateSilentContext(
+        sessionState.currentQuestionIndex,
+      );
+      fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
+    }
 
     const response = await openai.beta.realtime.sessions.create({
       model: "gpt-4o-realtime-preview-2024-12-17",
@@ -285,6 +301,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     res.json({
       token: response.client_secret.value,
       mode: "simple",
+      lesson: lessonNumber,
       instructionsIncluded: true,
       sessionId: sessionId,
       currentQuestionIndex: sessionState.currentQuestionIndex,

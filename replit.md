@@ -32,17 +32,19 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
 - **Simplified Progressive Learning Flow**: Streamlined UI with a clear progression (Video → Flashcards → AI Chat → Next Topic Video).
 - **AI Voice Conversation Feature**: Real-time WebRTC voice practice using OpenAI Realtime API, including ephemeral session tokens, full-duplex audio communication, and persistent live text transcripts. Session usage time is tracked in the `ai_sessions` table (started_at, ended_at). This is the **default landing page** when users visit the website or log in. Also available as Activity Type 3 (topic-based) within the learning flow.
 - **AI Text Chat Feature**: Text-based alternative to voice chat using OpenAI Chat Completions API (gpt-4o). Uses the exact same lesson-based prompt system as voice chat. Available at `/text-chat` route. Useful for testing without audio or in public places.
-- **Simple Mode (MVP)**: Voice conversation mode using the ChatPartner component at `/` route. Uses a single self-contained prompt (`server/prompts/simpleConversationPrompt.ts`) with 52 ordered questions. Features explicit backend question flow control with:
+- **Simple Mode (MVP)**: Voice conversation mode using the ChatPartner component at `/` route. Supports multiple lessons with explicit backend question flow control:
+  - **Lesson 1**: Uses `simpleConversationPrompt.ts` with 52 ordered questions
+  - **Lesson 2**: Uses `simpleConversationPrompt2.ts` with 8 PARTS (Making Friends, Vocabulary Practice, Role Play, etc.)
   - Questions in English, corrections in Spanish
   - Backend tracks `currentQuestionIndex` per session in memory (`simpleSessionStates` Map)
   - Questions extracted to `server/prompts/simpleConversationQuestions.ts` for index-based access
   - Silent orientation context injected into prompt (AI knows its position without mentioning numbers)
   - Question advancement detected by comparing AI output with expected next question
   - Automatic recap at the end with feedback in Spanish
-  - Endpoint: `/api/assistant/simple-session` (accepts `?initialQuestionIndex=N` for testing)
+  - Endpoint: `/api/assistant/simple-session` (accepts `?lesson=N` and `?initialQuestionIndex=N` for testing)
   - Process response: `POST /api/assistant/simple-session/:sessionId/process-response`
   - State query: `GET /api/assistant/simple-session/:sessionId/state`
-  - Hook: `useSimpleConversation.ts`
+  - Hook: `useRealtimeConversation.ts` (passes lesson parameter)
   - Session cleanup: Expired sessions (>2 hours) are automatically cleaned up
 - **Multi-Agent AI Architecture** (Experimental): Modular multi-agent system in `server/agents/` and `server/orchestrator/` with:
   - `Orchestrator`: Central decision-maker that coordinates all agents
