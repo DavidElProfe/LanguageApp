@@ -17,6 +17,13 @@ import {
   getQuestionByIndex,
   findQuestionIndex,
 } from "./prompts/simpleConversationQuestions";
+import {
+  LESSON_2_PARTS,
+  getLesson2Part,
+  getLesson2Question,
+  getLesson2PartQuestionCount,
+  generateLesson2Context,
+} from "./prompts/lesson2Questions";
 
 // ===== What does → Spanish only guard =====
 
@@ -50,7 +57,39 @@ interface SimpleSessionState {
   createdAt: number;
 }
 
+interface Lesson2SessionState {
+  currentPart: number;
+  currentQuestionInPart: number;
+  lastAdvancedAt: number;
+  createdAt: number;
+}
+
 const simpleSessionStates = new Map<string, SimpleSessionState>();
+const lesson2SessionStates = new Map<string, Lesson2SessionState>();
+
+function getOrCreateLesson2SessionState(
+  sessionId: string,
+  initialPart: number = 1,
+  initialQuestion: number = 1
+): Lesson2SessionState {
+  if (!lesson2SessionStates.has(sessionId)) {
+    const validPart = Math.max(1, Math.min(initialPart, 8));
+    const maxQ = getLesson2PartQuestionCount(validPart);
+    const validQ = Math.max(1, Math.min(initialQuestion, maxQ));
+    
+    const state: Lesson2SessionState = {
+      currentPart: validPart,
+      currentQuestionInPart: validQ,
+      lastAdvancedAt: 0,
+      createdAt: Date.now(),
+    };
+    lesson2SessionStates.set(sessionId, state);
+    console.log(
+      `[Lesson2Session] Created session ${sessionId} at PART ${state.currentPart}, question ${state.currentQuestionInPart}`
+    );
+  }
+  return lesson2SessionStates.get(sessionId)!;
+}
 
 function getOrCreateSessionState(
   sessionId: string,
@@ -254,6 +293,17 @@ assistantRouter.get("/simple-session", async (req, res) => {
       }
     }
 
+    const questionParam = req.query.question;
+    let questionInPart = 1;
+    if (questionParam) {
+      const parsed = parseInt(questionParam as string, 10);
+      const maxQ = getLesson2PartQuestionCount(partNumber);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= maxQ) {
+        questionInPart = parsed;
+        console.log(`[SimpleSession] Lesson 2 PART ${partNumber} starting at question ${questionInPart}`);
+      }
+    }
+
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
     let initialQuestionIndex = 1;
 
@@ -268,18 +318,18 @@ assistantRouter.get("/simple-session", async (req, res) => {
     }
 
     const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const sessionState = getOrCreateSessionState(
-      sessionId,
-      initialQuestionIndex,
-    );
-
+    
     let fullInstructions: string;
+    let lesson2State: Lesson2SessionState | null = null;
+    let sessionState: SimpleSessionState | null = null;
+
     if (lessonNumber === 2) {
-      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + `\n\nYou are currently in PART ${partNumber}. Begin with the first question of PART ${partNumber}.`;
+      lesson2State = getOrCreateLesson2SessionState(sessionId, partNumber, questionInPart);
+      const lesson2Context = generateLesson2Context(lesson2State.currentPart, lesson2State.currentQuestionInPart);
+      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
     } else {
-      const silentContext = generateSilentContext(
-        sessionState.currentQuestionIndex,
-      );
+      sessionState = getOrCreateSessionState(sessionId, initialQuestionIndex);
+      const silentContext = generateSilentContext(sessionState.currentQuestionIndex);
       fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
     }
 
@@ -304,20 +354,35 @@ assistantRouter.get("/simple-session", async (req, res) => {
       "OPENAI_RESPONSE_OK - Session created, token length:",
       response.client_secret?.value?.length,
     );
-    console.log(
-      `[SimpleSession] Session ${sessionId} ready at question ${sessionState.currentQuestionIndex}`,
-    );
 
-    res.json({
-      token: response.client_secret.value,
-      mode: "simple",
-      lesson: lessonNumber,
-      part: lessonNumber === 2 ? partNumber : undefined,
-      instructionsIncluded: true,
-      sessionId: sessionId,
-      currentQuestionIndex: sessionState.currentQuestionIndex,
-      totalQuestions: TOTAL_QUESTIONS,
-    });
+    if (lessonNumber === 2 && lesson2State) {
+      console.log(
+        `[Lesson2Session] Session ${sessionId} ready at PART ${lesson2State.currentPart}, question ${lesson2State.currentQuestionInPart}`
+      );
+      res.json({
+        token: response.client_secret.value,
+        mode: "simple",
+        lesson: lessonNumber,
+        part: lesson2State.currentPart,
+        currentQuestionInPart: lesson2State.currentQuestionInPart,
+        totalQuestionsInPart: getLesson2PartQuestionCount(lesson2State.currentPart),
+        instructionsIncluded: true,
+        sessionId: sessionId,
+      });
+    } else if (sessionState) {
+      console.log(
+        `[SimpleSession] Session ${sessionId} ready at question ${sessionState.currentQuestionIndex}`
+      );
+      res.json({
+        token: response.client_secret.value,
+        mode: "simple",
+        lesson: lessonNumber,
+        instructionsIncluded: true,
+        sessionId: sessionId,
+        currentQuestionIndex: sessionState.currentQuestionIndex,
+        totalQuestions: TOTAL_QUESTIONS,
+      });
+    }
   } catch (error: any) {
     console.error("=== OPENAI API ERROR ===");
     console.error("Status:", error.status);
