@@ -31,7 +31,7 @@ const LESSON_OPTIONS = [
   {
     value: 2,
     label: "Lección 2: Describir cosas y preferencias",
-    available: false,
+    available: true,
   },
   { value: 3, label: "Lección 3: Comida, compras y números", available: false },
   {
