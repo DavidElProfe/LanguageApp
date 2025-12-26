@@ -51,10 +51,21 @@ const LESSON_OPTIONS = [
   { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
 ];
 
+const LESSON_2_PARTS = [
+  { value: 1, label: "Part 1: Making Friends" },
+  { value: 2, label: "Part 2: Vocabulary - People" },
+  { value: 3, label: "Part 3: Vocabulary - Classroom Objects" },
+  { value: 4, label: "Part 4: Role Play - Shopping" },
+  { value: 5, label: "Part 5: Relevance (Personalization)" },
+  { value: 6, label: "Part 6: Practicing Numbers" },
+  { value: 7, label: "Part 7: Practicing Colors" },
+  { value: 8, label: "Part 8: Making Small Talk" },
+];
+
 export default function ChatPartner() {
   const [, setLocation] = useLocation();
   const [selectedLesson, setSelectedLesson] = useState(1);
-  // Show conversation text by default for pedagogical support
+  const [selectedPart, setSelectedPart] = useState(1);
   const [showDebugChat, setShowDebugChat] = useState(true);
   const [recapRequested, setRecapRequested] = useState(false);
 
@@ -67,7 +78,7 @@ export default function ChatPartner() {
     startConversation,
     stopConversation,
     requestSessionRecap,
-  } = useRealtimeConversation({ lesson: selectedLesson });
+  } = useRealtimeConversation({ lesson: selectedLesson, part: selectedPart });
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -142,6 +153,38 @@ export default function ChatPartner() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Part Selector - Only for Lesson 2 */}
+              {selectedLesson === 2 && (
+                <div className="space-y-2">
+                  <label htmlFor="part-select" className="text-sm font-medium">
+                    Selecciona el PART que quieres practicar:
+                  </label>
+                  <Select
+                    value={selectedPart.toString()}
+                    onValueChange={(value) => setSelectedPart(parseInt(value, 10))}
+                    disabled={
+                      connectionState !== "idle" &&
+                      connectionState !== "ended" &&
+                      connectionState !== "error"
+                    }
+                  >
+                    <SelectTrigger id="part-select" data-testid="select-part">
+                      <SelectValue placeholder="Selecciona un PART" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {LESSON_2_PARTS.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value.toString()}
+                        >
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {errorMessage && (
                 <div

@@ -84,7 +84,7 @@ function looksLikeValidSpanishMeaning(text: string, qIndex: number): boolean {
    HOOK
 ===================================================== */
 
-export function useRealtimeConversation({ lesson = 1 } = {}) {
+export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
@@ -150,7 +150,7 @@ export function useRealtimeConversation({ lesson = 1 } = {}) {
     try {
       setConnectionState("connecting");
 
-      const tokenRes = await fetch(`/api/assistant/simple-session?lesson=${lesson}`);
+      const tokenRes = await fetch(`/api/assistant/simple-session?lesson=${lesson}&part=${part}`);
       const { token, currentQuestionIndex } = await tokenRes.json();
       currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
 

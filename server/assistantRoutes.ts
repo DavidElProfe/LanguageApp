@@ -244,6 +244,16 @@ assistantRouter.get("/simple-session", async (req, res) => {
     }
     console.log(`[SimpleSession] Using lesson ${lessonNumber}`);
 
+    const partParam = req.query.part;
+    let partNumber = 1;
+    if (partParam) {
+      const parsed = parseInt(partParam as string, 10);
+      if (!isNaN(parsed) && parsed >= 1 && parsed <= 8) {
+        partNumber = parsed;
+        console.log(`[SimpleSession] Lesson 2 starting at PART ${partNumber}`);
+      }
+    }
+
     const initialQuestionIndexParam = req.query.initialQuestionIndex;
     let initialQuestionIndex = 1;
 
@@ -265,7 +275,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
 
     let fullInstructions: string;
     if (lessonNumber === 2) {
-      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + "\n\nYou are currently in PART 1. Begin with the first question.";
+      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + `\n\nYou are currently in PART ${partNumber}. Begin with the first question of PART ${partNumber}.`;
     } else {
       const silentContext = generateSilentContext(
         sessionState.currentQuestionIndex,
@@ -302,6 +312,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
       token: response.client_secret.value,
       mode: "simple",
       lesson: lessonNumber,
+      part: lessonNumber === 2 ? partNumber : undefined,
       instructionsIncluded: true,
       sessionId: sessionId,
       currentQuestionIndex: sessionState.currentQuestionIndex,
