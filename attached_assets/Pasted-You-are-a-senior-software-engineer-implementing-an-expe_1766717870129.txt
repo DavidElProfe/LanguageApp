@@ -1,0 +1,58 @@
+You are a senior software engineer implementing an experimental multi-agent AI architecture.
+
+PROJECT CONTEXT
+- This work is being done in a dedicated git branch.
+- The production system must NOT be modified.
+- All changes must be isolated and reversible.
+- Do not refactor existing production code unless explicitly instructed.
+
+ARCHITECTURE GOAL
+Implement a modular multi-agent assistant architecture composed of:
+
+1) Orchestrator Agent
+- Central decision-maker
+- Receives user input and conversation state
+- Decides which specialized agent to invoke
+- Aggregates responses into a final output
+
+2) Specialized Agents (independent and isolated)
+Each agent must:
+- Have a single responsibility
+- Receive structured input
+- Return structured output
+- Never directly respond to the user
+
+Required agents:
+- ValidationAgent: validates user input and detects errors
+- ConversationAgent: generates domain-specific responses
+- PedagogyAgent: explains mistakes and concepts
+- ControlAgent: enforces system rules and constraints
+
+DESIGN RULES
+- Each agent must live in its own file/module
+- Agents must NOT call each other directly
+- All communication goes through the Orchestrator
+- Use clear input/output contracts (interfaces or types)
+- Keep prompts for each agent explicit and minimal
+- Avoid long monolithic prompts
+
+IMPLEMENTATION GUIDELINES
+- Create a dedicated /agents folder
+- Create an /orchestrator module
+- Prompts must be externalized (not hardcoded inline)
+- Architecture must be readable and easy to reason about
+- Favor clarity over cleverness
+
+NON-GOALS
+- Do NOT optimize for performance
+- Do NOT introduce new features to the product
+- Do NOT change UI or user-facing behavior
+
+DELIVERABLES
+- Folder structure for the multi-agent system
+- Initial implementation of the Orchestrator
+- Stub or initial implementation for each agent
+- Clear comments explaining the role of each component
+
+If a design decision is ambiguous, stop and explain the options before coding.
+Proceed incrementally and safely.
