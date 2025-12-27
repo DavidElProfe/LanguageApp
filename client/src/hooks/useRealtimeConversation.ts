@@ -241,7 +241,6 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           if (isGarbage) {
             console.log(`[GARBAGE DETECTED] "${text}" - Cancelling AI response.`);
 
-            // 🚩 ESTO ES NUEVO: Cancelar cualquier respuesta que la IA esté preparando
             dcRef.current?.send(JSON.stringify({ 
               type: "response.cancel" 
             }));
@@ -252,6 +251,8 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
                  item_id: data.item_id
                }));
             }
+            return;
+          }
 
           // Filtro de ruido
           if (!text || text.length < 2) {
