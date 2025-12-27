@@ -68,14 +68,14 @@ function generateSilentContext(questionIndex: number): string {
   const currentQuestion = getQuestionByIndex(questionIndex);
 
   return `
-[INTERNAL SYSTEM OVERRIDE]
-- CURRENT_QUESTION: "${currentQuestion}"
-- GOAL: Ask this question and wait for the student.
-- DO NOT mention other questions.
-- DO NOT say "Good", "Nice", or "Next".
-- DO NOT advance. The system handles transitions.
-- If the student is correct, STAY SILENT or await instructions.
-[END OVERRIDE]
+[SYSTEM BLOCK]
+- YOU ARE CURRENTLY RESTRICTED TO QUESTION NUMBER: ${questionIndex}
+- EXACT QUESTION TEXT: "${currentQuestion}"
+- If the student is correct, your ONLY task is to remain SILENT and wait for the system to give you the next question.
+- DO NOT say "Nice to meet you" or "Great".
+- DO NOT invent questions about "free time".
+- If you are correcting, use the algorithm and then ask ONLY: "${currentQuestion}".
+[END BLOCK]
 `;
 }
 
@@ -95,6 +95,8 @@ assistantRouter.get("/simple-session", async (req, res) => {
     }
 
     const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    console.log(`[SESSION_START] ID: ${sessionId} | Lesson: ${lessonNumber}`);
+
     let fullInstructions: string;
 
     if (lessonNumber === 2) {
@@ -112,6 +114,9 @@ assistantRouter.get("/simple-session", async (req, res) => {
       );
       fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
 
+      console.log(
+        `[L2_INIT] Part: ${lesson2State.currentPart} | Q: ${lesson2State.currentQuestionInPart}`,
+      );
       const response = await createRealtimeSession(fullInstructions);
       res.json({
         token: response.client_secret.value,
@@ -131,6 +136,11 @@ assistantRouter.get("/simple-session", async (req, res) => {
 
       fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
 
+      console.log(
+        `[L1_INIT] Question Index: ${sessionState.currentQuestionIndex}`,
+      );
+      console.log(`[PROMPT_SENT]:\n${silentContext}`);
+
       const response = await createRealtimeSession(fullInstructions);
       res.json({
         token: response.client_secret.value,
@@ -141,6 +151,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
       });
     }
   } catch (error: any) {
+    console.error(`[SESSION_ERROR]`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -153,13 +164,14 @@ async function createRealtimeSession(instructions: string) {
     modalities: ["text", "audio"],
     turn_detection: {
       type: "server_vad",
-      threshold: 0.6,
+      threshold: 0.8,
       prefix_padding_ms: 500,
-      silence_duration_ms: 2500, // Aumentado para evitar interrupciones
+      silence_duration_ms: 3000,
     },
     input_audio_transcription: {
       model: "whisper-1",
     },
+    temperature: 0.6,
   });
 }
 
@@ -170,17 +182,27 @@ assistantRouter.post(
     const { aiTranscript, studentTranscript } = req.body;
     const sessionState = simpleSessionStates.get(sessionId);
 
-    if (!sessionState)
+    if (!sessionState) {
+      console.warn(`[PROCESS_ERROR] Session ${sessionId} not found`);
       return res.status(404).json({ error: "Session not found" });
+    }
 
     const currentIndex = sessionState.currentQuestionIndex;
+    console.log(
+      `[PROCESS_START] Session: ${sessionId} | Index: ${currentIndex}`,
+    );
+    console.log(
+      `[TRANSCRIPTS] Student: "${studentTranscript}" | AI: "${aiTranscript}"`,
+    );
 
-    // Guardrail para traducciones
     if (
       typeof studentTranscript === "string" &&
       isWhatDoesQuestion(currentIndex) &&
       looksLikeEnglishAnswer(studentTranscript)
     ) {
+      console.log(
+        `[GUARDRAIL] Triggered: English answer on Spanish-required question`,
+      );
       return res.json({
         advanced: false,
         guardrailTriggered: true,
@@ -189,6 +211,10 @@ assistantRouter.post(
     }
 
     const detectedIndex = findQuestionIndex(aiTranscript);
+    console.log(
+      `[INDEX_DETECTION] Detected: ${detectedIndex} | Target: ${currentIndex + 1}`,
+    );
+
     const now = Date.now();
     let advanced = false;
 
@@ -199,6 +225,11 @@ assistantRouter.post(
       sessionState.currentQuestionIndex = detectedIndex;
       sessionState.lastAdvancedAt = now;
       advanced = true;
+      console.log(`[SUCCESS] Advanced to index ${detectedIndex}`);
+    } else {
+      console.log(
+        `[STAY] Remaining at index ${currentIndex}. Reason: ${detectedIndex !== currentIndex + 1 ? "Index mismatch" : "Cooldown active"}`,
+      );
     }
 
     res.json({
@@ -209,7 +240,6 @@ assistantRouter.post(
   },
 );
 
-// Helper para estados
 function getOrCreateSessionState(id: string, idx: number): SimpleSessionState {
   if (!simpleSessionStates.has(id)) {
     simpleSessionStates.set(id, {

@@ -63,23 +63,38 @@ export function getQuestionByIndex(index: number): string | null {
 }
 
 export function findQuestionIndex(text: string): number | null {
-  const normalizedText = text.toLowerCase().trim();
-  
+  const normalizedText = text
+    .toLowerCase()
+    .replace(/[?.!,]/g, "")
+    .trim();
+
+  if (!normalizedText) return null;
+
   for (let i = 0; i < SIMPLE_CONVERSATION_QUESTIONS.length; i++) {
-    const question = SIMPLE_CONVERSATION_QUESTIONS[i].toLowerCase();
-    const questionCore = question.replace(/[?.!,]/g, '').trim();
-    const textCore = normalizedText.replace(/[?.!,]/g, '').trim();
-    
-    if (textCore.includes(questionCore) || questionCore.includes(textCore)) {
+    const question = SIMPLE_CONVERSATION_QUESTIONS[i]
+      .toLowerCase()
+      .replace(/[?.!,]/g, "")
+      .trim();
+
+    if (
+      normalizedText.includes(question) ||
+      question.includes(normalizedText)
+    ) {
       return i + 1;
     }
-    
-    const questionWords = questionCore.split(' ').filter(w => w.length > 3);
-    const matchingWords = questionWords.filter(word => textCore.includes(word));
-    if (matchingWords.length >= Math.min(3, questionWords.length * 0.6)) {
+
+    const questionWords = question.split(" ").filter((w) => w.length > 3);
+    const matchingWords = questionWords.filter((word) =>
+      normalizedText.includes(word),
+    );
+
+    if (
+      questionWords.length > 0 &&
+      matchingWords.length >= Math.ceil(questionWords.length * 0.7)
+    ) {
       return i + 1;
     }
   }
-  
+
   return null;
 }

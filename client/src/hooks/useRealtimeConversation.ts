@@ -1,11 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { SIMPLE_CONVERSATION_PROMPT } from "../../../server/prompts/simpleConversationPrompt";
 
 /* =====================================================
-   TYPES
+    TYPES & CONSTANTS
 ===================================================== */
-
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
-
 type Lesson1Step = "NAME" | "FROM" | "LIVE" | "WORK" | "LIKE" | "DONE";
 
 export interface ConversationMessage {
@@ -14,10 +13,6 @@ export interface ConversationMessage {
   text: string;
   timestamp: number;
 }
-
-/* =====================================================
-   🛑 WHAT DOES → SOLO ESPAÑOL
-===================================================== */
 
 const WHAT_DOES_START = 25;
 const WHAT_DOES_END = 32;
@@ -44,12 +39,16 @@ const WHAT_DOES_ANSWERS: Record<number, string[]> = {
   32: ["aula", "salón de clases"],
 };
 
+/* =====================================================
+    VALIDATORS
+===================================================== */
+
 function isWhatDoesQuestion(index: number): boolean {
   return index >= WHAT_DOES_START && index <= WHAT_DOES_END;
 }
 
-function getWhatDoesQuestionText(qIndex: number): string | null {
-  const questionMap: Record<number, string> = {
+function getWhatDoesQuestionText(qIndex: number): string {
+  const map: Record<number, string> = {
     25: "What does computer mean in Spanish?",
     26: "What does office mean?",
     27: "What does paper mean?",
@@ -59,7 +58,7 @@ function getWhatDoesQuestionText(qIndex: number): string | null {
     31: "What does conference room mean?",
     32: "What does classroom mean?",
   };
-  return questionMap[qIndex] || null;
+  return map[qIndex] || "Question";
 }
 
 function normalize(text: string): string {
@@ -80,8 +79,49 @@ function looksLikeValidSpanishMeaning(text: string, qIndex: number): boolean {
   return expected.some((w) => t.includes(normalize(w)));
 }
 
+function validateStudentGrammar(text: string): {
+  isValid: boolean;
+  feedback?: string;
+} {
+  const t = text.toLowerCase();
+
+  // 1. Contracciones
+  const forbidden = ["don't", "can't", "won't", "it's", "i'm"];
+  const found = forbidden.find((c) => t.includes(c));
+  if (found) {
+    return {
+      isValid: false,
+      feedback:
+        "No uses contracciones. Por favor, di la forma completa (ejemplo: 'do not' en lugar de 'don't').",
+    };
+  }
+
+  // 2. Like to
+  if (t.includes("like") && !t.includes("like to")) {
+    const verbs = [
+      "play",
+      "cook",
+      "read",
+      "dance",
+      "study",
+      "watch",
+      "ride",
+      "go",
+      "practice",
+    ];
+    if (verbs.some((v) => t.includes(v))) {
+      return {
+        isValid: false,
+        feedback:
+          "Casi 😄 Recuerda usar 'like to' antes del verbo. Por ejemplo: 'I like to cook'.",
+      };
+    }
+  }
+  return { isValid: true };
+}
+
 /* =====================================================
-   HOOK
+    HOOK: useRealtimeConversation
 ===================================================== */
 
 export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
@@ -91,43 +131,26 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [currentStep] = useState<Lesson1Step>("NAME");
 
-  /* ===================== REFS ===================== */
-
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const currentQuestionIndexRef = useRef<number>(0);
-  const lastUserTranscriptRef = useRef<string | null>(null);
-  const isRecapRequestedRef = useRef(false);
   const sessionIdRef = useRef<string | null>(null);
   const currentPartRef = useRef<number>(1);
   const currentQuestionInPartRef = useRef<number>(1);
 
-  const canAdvanceRef = useRef(true);
-  const answerTurnRef = useRef(0);
-  const lastApprovedTurnRef = useRef<number | null>(null);
-  // 🕒 Marca cuándo el usuario EMPIEZA a hablar
-  const speechStartedAtRef = useRef<number | null>(null);
+  // --- CONTROL DE FLUJO Y SEMÁFORO ---
+  const canAdvanceRef = useRef(true); // Bloqueo lógico (gramática/idioma)
+  const expectingResponseRef = useRef(false); // SEMÁFORO (Turn Lock)
+  const isProcessingRef = useRef(false); // Bloqueo de red
 
-  /* ===================== HELPERS ===================== */
-
-  function requestModelResponse() {
-    if (!canAdvanceRef.current) {
-      console.log("🛑 NOT requesting model response (blocked)");
-      return;
+  const requestModelResponse = () => {
+    if (canAdvanceRef.current && dcRef.current?.readyState === "open") {
+      dcRef.current.send(JSON.stringify({ type: "response.create" }));
     }
-    dcRef.current?.send(JSON.stringify({ type: "response.create" }));
-  }
-
-  /* ===================== CLEANUP ===================== */
-
-  useEffect(() => {
-    return () => {
-      stopConversation().catch(console.error);
-    };
-  }, []);
+  };
 
   const stopConversation = async () => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -140,23 +163,25 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
     pcRef.current = null;
     audioRef.current = null;
 
-    canAdvanceRef.current = true;
-    lastApprovedTurnRef.current = null;
-    answerTurnRef.current = 0;
-
     setConnectionState("ended");
   };
-
-  /* ===================== START ===================== */
 
   const startConversation = async () => {
     try {
       setConnectionState("connecting");
 
-      const tokenRes = await fetch(`/api/assistant/simple-session?lesson=${lesson}&part=${part}`);
+      const tokenRes = await fetch(
+        `/api/assistant/simple-session?lesson=${lesson}&part=${part}`,
+      );
       const response = await tokenRes.json();
-      const { token, sessionId, currentQuestionIndex, currentQuestionInPart, part: responsePart } = response;
-      
+      const {
+        token,
+        sessionId,
+        currentQuestionIndex,
+        currentQuestionInPart,
+        part: responsePart,
+      } = response;
+
       sessionIdRef.current = sessionId;
       if (lesson === 2) {
         currentPartRef.current = responsePart ?? part;
@@ -167,12 +192,10 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
-
       const audio = document.createElement("audio");
       audio.autoplay = true;
       document.body.appendChild(audio);
       audioRef.current = audio;
-
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -184,106 +207,136 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
       dc.onopen = () => {
         setConnectionState("active");
-        requestModelResponse(); // 👈 SOLO ACÁ
+
+        // Inicializar sesión con prompt estricto si es Lección 1
+        if (lesson === 1) {
+          dc.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions: SIMPLE_CONVERSATION_PROMPT,
+                tool_choice: "none",
+                temperature: 0.6,
+              },
+            }),
+          );
+        }
+
+        // Iniciamos el semáforo en rojo hasta que el usuario hable
+        expectingResponseRef.current = false;
+        requestModelResponse();
       };
 
       dc.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        // 🎤 Usuario empezó a hablar
-        if (data.type === "input_audio_buffer.speech_started") {
-          speechStartedAtRef.current = Date.now();
-          return;
-        }
 
-        /* ---------- STUDENT ---------- */
+        // --- 1. USUARIO HABLA ---
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
-          console.log("HOLAAAA: RAW TRANSCRIPT:", data.transcript);
-
           const text = data.transcript?.trim();
-          if (!text) return;
-          if (text.length < 3) return;
-          if (!/[a-zA-Z]/.test(text)) return;
 
-          const ts = speechStartedAtRef.current ?? Date.now();
-          speechStartedAtRef.current = null;
+          const isGarbage = !text || text.length < 3 || /^(swooshy|electrolytes|uh|um)$/i.test(text);
 
-          // ✅ MOSTRAR SIEMPRE LO QUE DIJO EL USUARIO
+          if (isGarbage) {
+            console.log(`[GARBAGE DETECTED] "${text}" - Cancelling AI response.`);
+
+            // 🚩 ESTO ES NUEVO: Cancelar cualquier respuesta que la IA esté preparando
+            dcRef.current?.send(JSON.stringify({ 
+              type: "response.cancel" 
+            }));
+
+            if (data.item_id) {
+               dcRef.current?.send(JSON.stringify({ 
+                 type: "conversation.item.delete",
+                 item_id: data.item_id
+               }));
+            }
+
+          // Filtro de ruido
+          if (!text || text.length < 2) {
+            // Si es ruido, NO tocamos el semáforo. Dejamos que siga en el estado que estaba.
+            return;
+          }
+
+          const qIndex = currentQuestionIndexRef.current;
+
+          // Validar gramática
+          const grammar = validateStudentGrammar(text);
+          if (!grammar.isValid) {
+            canAdvanceRef.current = false;
+            expectingResponseRef.current = false; // Bloqueamos semáforo (va a corregir)
+            dcRef.current?.send(
+              JSON.stringify({
+                type: "response.create",
+                response: {
+                  instructions: `Error: "${text}". Feedback: ${grammar.feedback}. Execute CORRECTION ALGORITHM.`,
+                },
+              }),
+            );
+            return;
+          }
+
+          // Validar idioma (What does)
+          if (isWhatDoesQuestion(qIndex)) {
+            if (looksLikeEnglish(text)) {
+              canAdvanceRef.current = false;
+              expectingResponseRef.current = false;
+              dcRef.current?.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    instructions: `Error: Answered in English. Tell student to translate to Spanish and repeat: "${getWhatDoesQuestionText(qIndex)}"`,
+                  },
+                }),
+              );
+              return;
+            }
+            if (!looksLikeValidSpanishMeaning(text, qIndex)) {
+              canAdvanceRef.current = false;
+              expectingResponseRef.current = false;
+              dcRef.current?.send(
+                JSON.stringify({
+                  type: "response.create",
+                  response: {
+                    instructions: `Error: Incorrect meaning. Explain in Spanish and repeat: "${getWhatDoesQuestionText(qIndex)}"`,
+                  },
+                }),
+              );
+              return;
+            }
+          }
+
+          // Respuesta válida
+          canAdvanceRef.current = true;
+          expectingResponseRef.current = true; // SEMÁFORO VERDE: Esperamos respuesta de IA para avanzar
+
           setMessages((m) => [
             ...m,
             {
               id: crypto.randomUUID(),
               role: "user",
               text,
-              timestamp: ts,
+              timestamp: Date.now(),
             },
           ]);
-
-          answerTurnRef.current += 1;
-          const myTurn = answerTurnRef.current;
-
-          const qIndex = currentQuestionIndexRef.current;
-          canAdvanceRef.current = false;
-
-          // ❌ RESPONDIÓ EN INGLÉS CUANDO DEBÍA SER ESPAÑOL
-          if (isWhatDoesQuestion(qIndex) && looksLikeEnglish(text)) {
-            setMessages((m) => [
-              ...m,
-              {
-                id: crypto.randomUUID(),
-                role: "assistant",
-                text: "Tenés que responder en español. Ejemplo: “employee” significa “empleado”.",
-                timestamp: Date.now(),
-              },
-            ]);
-
-            const questionText = getWhatDoesQuestionText(qIndex);
-            if (questionText && dcRef.current) {
-              dcRef.current.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    instructions: `Repeat EXACTLY: "${questionText}"`,
-                  },
-                }),
-              );
-            }
-            return;
-          }
-
-          // ❌ RESPUESTA INCORRECTA EN “WHAT DOES”
-          if (
-            isWhatDoesQuestion(qIndex) &&
-            !looksLikeValidSpanishMeaning(text, qIndex)
-          ) {
-            const questionText = getWhatDoesQuestionText(qIndex);
-            if (questionText && dcRef.current) {
-              dcRef.current.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    instructions: `Repeat EXACTLY: "${questionText}"`,
-                  },
-                }),
-              );
-            }
-            return;
-          }
-
-          // ✅ CORRECTO
-          canAdvanceRef.current = true;
-          lastApprovedTurnRef.current = myTurn;
-          lastUserTranscriptRef.current = text;
-
           requestModelResponse();
-          return;
         }
 
-        /* ---------- AI ---------- */
+        // --- 2. IA RESPONDE ---
         if (data.type === "response.audio_transcript.done") {
           const assistantText = data.transcript?.trim();
           if (!assistantText) return;
+
+          // Solo avanzamos si el semáforo estaba verde
+          if (expectingResponseRef.current) {
+            handleAdvanceLogic(assistantText);
+            expectingResponseRef.current = false; // Volvemos a rojo
+          } else {
+            console.log(
+              "🔒 [LOCKED] AI spoke but advance logic skipped (Semaphore Red)",
+            );
+          }
 
           setMessages((m) => [
             ...m,
@@ -294,45 +347,11 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
               timestamp: Date.now(),
             },
           ]);
-
-          if (
-            !canAdvanceRef.current ||
-            lastApprovedTurnRef.current !== answerTurnRef.current
-          ) {
-            console.log("⛔ AI response shown but NOT advancing (outdated)");
-            return;
-          }
-
-          if (lesson === 2 && sessionIdRef.current) {
-            fetch(`/api/assistant/lesson2-session/${sessionIdRef.current}/advance`, {
-              method: "POST",
-            })
-              .then((res) => res.json())
-              .then((advanceData) => {
-                if (advanceData.advanced) {
-                  currentPartRef.current = advanceData.currentPart;
-                  currentQuestionInPartRef.current = advanceData.currentQuestionInPart;
-                  console.log(
-                    `[Lesson2] Advanced to PART ${advanceData.currentPart}, Q${advanceData.currentQuestionInPart}`
-                  );
-                  if (advanceData.partAdvanced) {
-                    console.log(`[Lesson2] PART changed!`);
-                  }
-                  if (advanceData.lessonComplete) {
-                    console.log(`[Lesson2] Lesson complete!`);
-                  }
-                }
-              })
-              .catch((err) => console.error("[Lesson2] Advance error:", err));
-          } else {
-            currentQuestionIndexRef.current += 1;
-          }
         }
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       const sdpRes = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
         {
@@ -345,7 +364,6 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           body: offer.sdp,
         },
       );
-
       await pc.setRemoteDescription({
         type: "answer",
         sdp: await sdpRes.text(),
@@ -354,6 +372,90 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
       console.error(err);
       setErrorMessage("Error al iniciar la conversación");
       stopConversation();
+    }
+  };
+
+  // --- LÓGICA DE AVANCE CENTRALIZADA ---
+  const handleAdvanceLogic = async (aiTranscript: string) => {
+    if (
+      !sessionIdRef.current ||
+      !canAdvanceRef.current ||
+      isProcessingRef.current
+    )
+      return;
+
+    isProcessingRef.current = true;
+    try {
+      // 1. LECCIÓN 2 (Lógica compleja)
+      if (lesson === 2) {
+        const res = await fetch(
+          `/api/assistant/lesson2-session/${sessionIdRef.current}/advance`,
+          { method: "POST" },
+        );
+        const data = await res.json();
+
+        if (data.advanced) {
+          currentPartRef.current = data.currentPart;
+          currentQuestionInPartRef.current = data.currentQuestionInPart;
+          console.log(
+            `[L2] Advanced to Part ${data.currentPart} Q${data.currentQuestionInPart}`,
+          );
+
+          // Actualizar contexto de OpenAI con la nueva parte/pregunta
+          if (data.nextContext && dcRef.current?.readyState === "open") {
+            dcRef.current.send(
+              JSON.stringify({
+                type: "session.update",
+                session: {
+                  instructions: `CONTEXT UPDATE: ${data.nextContext}`,
+                },
+              }),
+            );
+          }
+        }
+      }
+      // 2. LECCIÓN 1 (Lógica simple)
+      else {
+        // Llamamos a process-response para validar el avance y obtener la siguiente pregunta
+        const res = await fetch(
+          `/api/assistant/simple-session/${sessionIdRef.current}/process-response`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ aiTranscript }),
+          },
+        );
+        const data = await res.json();
+
+        if (data.advanced) {
+          currentQuestionIndexRef.current = data.currentIndex;
+          console.log(`[L1] Advanced to Question ${data.currentIndex}`);
+
+          // Actualizar contexto de OpenAI con la nueva pregunta OBLIGATORIA
+          if (dcRef.current?.readyState === "open") {
+            dcRef.current.send(
+              JSON.stringify({
+                type: "session.update",
+                session: {
+                  instructions: `STRICT UPDATE: You are now on Question ${data.currentIndex}. Ask ONLY: "${data.currentQuestion}".`,
+                },
+              }),
+            );
+            // Disparamos la nueva pregunta inmediatamente (opcional, o esperamos al usuario)
+            setTimeout(
+              () =>
+                dcRef.current?.send(
+                  JSON.stringify({ type: "response.create" }),
+                ),
+              100,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Advance error:", e);
+    } finally {
+      isProcessingRef.current = false;
     }
   };
 
