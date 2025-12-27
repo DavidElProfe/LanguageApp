@@ -730,27 +730,68 @@ ${context}
 You are currently asking the student: "${currentQuestion}"
 Part: ${partInfo?.name || `PART ${currentPart}`}
 
-Respond naturally to the student's answer. If correct, acknowledge and move on. If incorrect, gently correct them in Spanish and ask again.`;
+IMPORTANT: You must respond with valid JSON in this exact format:
+{
+  "correct": true or false,
+  "response": "Your natural response to the student"
+}
+
+- Set "correct": true if the student answered correctly (even with minor issues that don't need correction)
+- Set "correct": false if the student made a significant error that requires correction
+- In "response", write your natural reply. If incorrect, gently correct in Spanish and ask again.`;
 
     const openai = new OpenAI();
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       temperature: 0.3,
+      response_format: { type: "json_object" },
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: studentMessage },
       ],
     });
 
-    const aiResponse = completion.choices[0]?.message?.content || "";
-    console.log(`[L2-TEST] AI response: "${aiResponse.substring(0, 100)}..."`);
+    const rawResponse = completion.choices[0]?.message?.content || "{}";
+    let parsed: { correct?: boolean; response?: string } = {};
+    try {
+      parsed = JSON.parse(rawResponse);
+    } catch {
+      console.error("[L2-TEST] Failed to parse AI JSON:", rawResponse);
+      parsed = { correct: false, response: rawResponse };
+    }
 
-    const advanceResult = advanceLesson2Session(sessionState, sid);
+    const isCorrect = parsed.correct === true;
+    const aiResponse = parsed.response || rawResponse;
+
+    console.log(`[L2-TEST] AI response (correct=${isCorrect}): "${aiResponse.substring(0, 80)}..."`);
+
+    let advanceResult: Lesson2AdvanceResult;
+
+    if (isCorrect) {
+      advanceResult = advanceLesson2Session(sessionState, sid);
+      console.log(`[L2-TEST] ✅ Correct answer - advancing`);
+    } else {
+      console.log(`[L2-TEST] ❌ Incorrect answer - NOT advancing`);
+      advanceResult = {
+        success: true,
+        previousPart: currentPart,
+        previousQuestion: currentQ,
+        currentPart,
+        currentQuestionInPart: currentQ,
+        totalQuestionsInPart: getLesson2PartQuestionCount(currentPart),
+        currentQuestion: currentQuestion,
+        advanced: false,
+        partAdvanced: false,
+        lessonComplete: false,
+        nextContext: null,
+      };
+    }
 
     res.json({
       sessionId: sid,
       studentMessage,
       aiResponse,
+      isCorrect,
       previousState: {
         part: advanceResult.previousPart,
         question: advanceResult.previousQuestion,
@@ -767,7 +808,6 @@ Respond naturally to the student's answer. If correct, acknowledge and move on. 
       advanced: advanceResult.advanced,
       partAdvanced: advanceResult.partAdvanced,
       lessonComplete: advanceResult.lessonComplete,
-      blocked: advanceResult.blocked,
     });
   } catch (error: any) {
     console.error("[L2-TEST] Error:", error);
