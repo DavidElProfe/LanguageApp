@@ -12,20 +12,16 @@ import {
 import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/simpleConversationPrompt";
 import { SIMPLE_CONVERSATION_PROMPT_2 } from "./prompts/simpleConversationPrompt2";
 import {
-  SIMPLE_CONVERSATION_QUESTIONS,
   TOTAL_QUESTIONS,
   getQuestionByIndex,
   findQuestionIndex,
 } from "./prompts/simpleConversationQuestions";
 import {
-  LESSON_2_PARTS,
   getLesson2Part,
   getLesson2Question,
   getLesson2PartQuestionCount,
   generateLesson2Context,
 } from "./prompts/lesson2Questions";
-
-// ===== What does → Spanish only guard =====
 
 const WHAT_DOES_START = 24;
 const WHAT_DOES_END = 31;
@@ -68,304 +64,27 @@ interface Lesson2SessionState {
 const simpleSessionStates = new Map<string, SimpleSessionState>();
 const lesson2SessionStates = new Map<string, Lesson2SessionState>();
 
-interface Lesson2AdvanceResult {
-  success: boolean;
-  blocked?: boolean;
-  blockReason?: string;
-  previousPart: number;
-  previousQuestion: number;
-  currentPart: number;
-  currentQuestionInPart: number;
-  totalQuestionsInPart: number;
-  currentQuestion: string | null;
-  advanced: boolean;
-  partAdvanced: boolean;
-  lessonComplete: boolean;
-  nextContext: string | null;
-}
-
-function advanceLesson2Session(
-  sessionState: Lesson2SessionState,
-  sessionId: string,
-  skipGuard: boolean = false,
-): Lesson2AdvanceResult {
-  const now = Date.now();
-  const currentPart = sessionState.currentPart;
-  const currentQ = sessionState.currentQuestionInPart;
-
-  if (!skipGuard && sessionState.lastUserInputAt <= sessionState.lastAdvancedAt) {
-    console.log(`[L2][BLOCKED] session=${sessionId} - No new user input since last advance`);
-    return {
-      success: false,
-      blocked: true,
-      blockReason: "No new user input since last advance",
-      previousPart: currentPart,
-      previousQuestion: currentQ,
-      currentPart,
-      currentQuestionInPart: currentQ,
-      totalQuestionsInPart: getLesson2PartQuestionCount(currentPart),
-      currentQuestion: getLesson2Question(currentPart, currentQ),
-      advanced: false,
-      partAdvanced: false,
-      lessonComplete: false,
-      nextContext: null,
-    };
-  }
-
-  console.log(
-    `[L2][ADVANCE_ATTEMPT] session=${sessionId} ` +
-      `lastUserInputAt=${sessionState.lastUserInputAt} ` +
-      `lastAdvancedAt=${sessionState.lastAdvancedAt}`,
-  );
-
-  const totalQInPart = getLesson2PartQuestionCount(currentPart);
-  let advanced = false;
-  let partAdvanced = false;
-  let lessonComplete = false;
-
-  if (currentQ < totalQInPart) {
-    sessionState.currentQuestionInPart = currentQ + 1;
-    sessionState.lastAdvancedAt = now;
-    advanced = true;
-    console.log(`[L2][ADVANCED] session=${sessionId} PART ${currentPart}, Q ${currentQ} → ${sessionState.currentQuestionInPart}`);
-  } else if (currentPart < 8) {
-    sessionState.currentPart = currentPart + 1;
-    sessionState.currentQuestionInPart = 1;
-    sessionState.lastAdvancedAt = now;
-    advanced = true;
-    partAdvanced = true;
-    console.log(`[L2][ADVANCED] session=${sessionId} PART ${currentPart} → ${sessionState.currentPart}`);
-  } else {
-    lessonComplete = true;
-    console.log(`[L2][COMPLETE] session=${sessionId} Lesson 2 complete!`);
-  }
-
-  const newPart = sessionState.currentPart;
-  const newQ = sessionState.currentQuestionInPart;
-
-  return {
-    success: true,
-    previousPart: currentPart,
-    previousQuestion: currentQ,
-    currentPart: newPart,
-    currentQuestionInPart: newQ,
-    totalQuestionsInPart: getLesson2PartQuestionCount(newPart),
-    currentQuestion: getLesson2Question(newPart, newQ),
-    advanced,
-    partAdvanced,
-    lessonComplete,
-    nextContext: advanced ? generateLesson2Context(newPart, newQ) : null,
-  };
-}
-
-function getOrCreateLesson2SessionState(
-  sessionId: string,
-  initialPart: number = 1,
-  initialQuestion: number = 1,
-): Lesson2SessionState {
-  if (!lesson2SessionStates.has(sessionId)) {
-    const validPart = Math.max(1, Math.min(initialPart, 8));
-    const maxQ = getLesson2PartQuestionCount(validPart);
-    const validQ = Math.max(1, Math.min(initialQuestion, maxQ));
-
-    const state: Lesson2SessionState = {
-      currentPart: validPart,
-      currentQuestionInPart: validQ,
-      lastAdvancedAt: 0,
-      lastUserInputAt: 0,
-      createdAt: Date.now(),
-    };
-
-    lesson2SessionStates.set(sessionId, state);
-    console.log(
-      `[Lesson2Session] Created session ${sessionId} at PART ${state.currentPart}, question ${state.currentQuestionInPart}`,
-    );
-  }
-  return lesson2SessionStates.get(sessionId)!;
-}
-
-function getOrCreateSessionState(
-  sessionId: string,
-  initialIndex: number = 0,
-): SimpleSessionState {
-  if (!simpleSessionStates.has(sessionId)) {
-    const state: SimpleSessionState = {
-      currentQuestionIndex: Math.max(
-        0,
-        Math.min(initialIndex, TOTAL_QUESTIONS),
-      ),
-      lastAdvancedAt: 0,
-      createdAt: Date.now(),
-    };
-    simpleSessionStates.set(sessionId, state);
-    console.log(
-      `[SimpleSession] Created session ${sessionId} at question ${state.currentQuestionIndex}`,
-    );
-  }
-  return simpleSessionStates.get(sessionId)!;
-}
-
 function generateSilentContext(questionIndex: number): string {
-  const baseContext = `
-[INTERNAL ORIENTATION - DO NOT MENTION THIS TO THE STUDENT]
+  const currentQuestion = getQuestionByIndex(questionIndex);
 
-=== SESSION RESET NOTICE ===
-This is a FRESH session. You have NO memory of previous questions or answers.
-Do NOT summarize, reference, or acknowledge any prior conversation.
-Do NOT say things like "Let's continue" or "Where were we".
-Simply ask the current question as if starting fresh.
-
-=== CURRENT POSITION ===
+  return `
+[INTERNAL SYSTEM OVERRIDE]
+- CURRENT_QUESTION: "${currentQuestion}"
+- GOAL: Ask this question and wait for the student.
+- DO NOT mention other questions.
+- DO NOT say "Good", "Nice", or "Next".
+- DO NOT advance. The system handles transitions.
+- If the student is correct, STAY SILENT or await instructions.
+[END OVERRIDE]
 `;
-
-  if (questionIndex <= 1) {
-    return (
-      baseContext +
-      `You are about to start the conversation. Begin with question 1: "${getQuestionByIndex(1)}"
-Do not reference question numbers aloud. Simply ask the question naturally.
-[END INTERNAL ORIENTATION]
-`
-    );
-  }
-  return (
-    baseContext +
-    `You are currently at question ${questionIndex} of ${TOTAL_QUESTIONS}.
-The current question is: "${getQuestionByIndex(questionIndex)}"
-Do not reference question numbers aloud. Simply ask the question naturally.
-Start by asking ONLY this question. Do not recap or summarize anything.
-[END INTERNAL ORIENTATION]
-`
-  );
 }
-
-setInterval(
-  () => {
-    const now = Date.now();
-    const MAX_SESSION_AGE = 2 * 60 * 60 * 1000;
-    const entries = Array.from(simpleSessionStates.entries());
-    for (const [sessionId, state] of entries) {
-      if (now - state.createdAt > MAX_SESSION_AGE) {
-        simpleSessionStates.delete(sessionId);
-        console.log(`[SimpleSession] Cleaned up expired session ${sessionId}`);
-      }
-    }
-  },
-  15 * 60 * 1000,
-);
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-assistantRouter.get("/realtime-token", async (req, res) => {
-  try {
-    const lessonParam = req.query.lesson;
-    const stepParam = req.query.step as Lesson1Step | undefined;
-    let lessonNumber = 1;
-
-    if (lessonParam) {
-      const parsed = parseInt(lessonParam as string, 10);
-      if (!isNaN(parsed) && validateLesson(parsed)) {
-        lessonNumber = parsed;
-      }
-    }
-
-    const basePrompt = getBasePrompt();
-
-    let fullInstructions: string;
-    let isStepBased = false;
-    let initialStep: Lesson1Step = "NAME";
-
-    if (lessonNumber === 1) {
-      isStepBased = true;
-      const masterPrompt = getLesson1MasterPrompt();
-      const step = stepParam || "NAME";
-      initialStep = step;
-      const stepPrompt = getLesson1Step(step);
-      fullInstructions = basePrompt;
-      console.log(`Creating realtime session for Lesson 1, Step: ${step}`);
-
-      res.json({
-        token: (
-          await openai.beta.realtime.sessions.create({
-            model: "gpt-4o-realtime-preview-2024-12-17",
-            voice: "alloy",
-            instructions: basePrompt,
-            modalities: ["text", "audio"],
-            turn_detection: {
-              type: "server_vad",
-              threshold: 0.65,
-              prefix_padding_ms: 500,
-              silence_duration_ms: 2500,
-            },
-            input_audio_transcription: {
-              model: "whisper-1",
-              language: "en",
-            },
-          })
-        ).client_secret.value,
-        lesson: lessonNumber,
-        basePrompt: basePrompt,
-        masterPrompt: masterPrompt,
-        stepPrompt: stepPrompt,
-        totalLessons: TOTAL_LESSONS,
-        isStepBased: true,
-        currentStep: initialStep,
-      });
-      return;
-    } else {
-      const lessonPrompt = getLessonPrompt(lessonNumber);
-      fullInstructions = basePrompt + "\n\n" + lessonPrompt;
-      console.log(`Creating realtime session for Lesson ${lessonNumber}`);
-    }
-
-    const response = await openai.beta.realtime.sessions.create({
-      model: "gpt-4o-realtime-preview-2024-12-17",
-      voice: "alloy",
-      instructions: basePrompt,
-      modalities: ["text", "audio"],
-      turn_detection: {
-        type: "server_vad",
-        threshold: 0.5,
-        prefix_padding_ms: 300,
-        silence_duration_ms: 900,
-      },
-      input_audio_transcription: {
-        model: "whisper-1",
-      },
-    });
-
-    res.json({
-      token: response.client_secret.value,
-      lesson: lessonNumber,
-      fullInstructions: fullInstructions,
-      totalLessons: TOTAL_LESSONS,
-      isStepBased: isStepBased,
-      currentStep: isStepBased ? initialStep : null,
-    });
-  } catch (error: any) {
-    console.error("Error creating realtime session:", error);
-    res.status(500).json({
-      error: "Failed to create realtime session",
-      message: error.message,
-    });
-  }
-});
-
-assistantRouter.get("/lesson1-step", (req, res) => {
-  const stepParam = req.query.step as Lesson1Step;
-  if (!stepParam) {
-    return res.status(400).json({ error: "Step parameter required" });
-  }
-
-  const stepPrompt = getLesson1Step(stepParam);
-  res.json({ step: stepParam, stepPrompt });
-});
-
 assistantRouter.get("/simple-session", async (req, res) => {
   try {
-    console.log("=== SIMPLE SESSION REQUEST ===");
-
     const lessonParam = req.query.lesson;
     let lessonNumber = 1;
     if (lessonParam) {
@@ -374,52 +93,15 @@ assistantRouter.get("/simple-session", async (req, res) => {
         lessonNumber = parsed;
       }
     }
-    console.log(`[SimpleSession] Using lesson ${lessonNumber}`);
-
-    const partParam = req.query.part;
-    let partNumber = 1;
-    if (partParam) {
-      const parsed = parseInt(partParam as string, 10);
-      if (!isNaN(parsed) && parsed >= 1 && parsed <= 8) {
-        partNumber = parsed;
-        console.log(`[SimpleSession] Lesson 2 starting at PART ${partNumber}`);
-      }
-    }
-
-    const questionParam = req.query.question;
-    let questionInPart = 1;
-    if (questionParam) {
-      const parsed = parseInt(questionParam as string, 10);
-      const maxQ = getLesson2PartQuestionCount(partNumber);
-      if (!isNaN(parsed) && parsed >= 1 && parsed <= maxQ) {
-        questionInPart = parsed;
-        console.log(
-          `[SimpleSession] Lesson 2 PART ${partNumber} starting at question ${questionInPart}`,
-        );
-      }
-    }
-
-    const initialQuestionIndexParam = req.query.initialQuestionIndex;
-    let initialQuestionIndex = 1;
-
-    if (initialQuestionIndexParam) {
-      const parsed = parseInt(initialQuestionIndexParam as string, 10);
-      if (!isNaN(parsed) && parsed >= 1 && parsed <= TOTAL_QUESTIONS) {
-        initialQuestionIndex = parsed;
-        console.log(
-          `[SimpleSession] Starting at custom question index: ${initialQuestionIndex}`,
-        );
-      }
-    }
 
     const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
     let fullInstructions: string;
-    let lesson2State: Lesson2SessionState | null = null;
-    let sessionState: SimpleSessionState | null = null;
 
     if (lessonNumber === 2) {
-      lesson2State = getOrCreateLesson2SessionState(
+      const partNumber = parseInt(req.query.part as string, 10) || 1;
+      const questionInPart = parseInt(req.query.question as string, 10) || 1;
+
+      const lesson2State = getOrCreateLesson2SessionState(
         sessionId,
         partNumber,
         questionInPart,
@@ -429,468 +111,129 @@ assistantRouter.get("/simple-session", async (req, res) => {
         lesson2State.currentQuestionInPart,
       );
       fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
+
+      const response = await createRealtimeSession(fullInstructions);
+      res.json({
+        token: response.client_secret.value,
+        mode: "simple",
+        lesson: lessonNumber,
+        sessionId,
+        part: lesson2State.currentPart,
+        currentQuestionInPart: lesson2State.currentQuestionInPart,
+      });
     } else {
-      sessionState = getOrCreateSessionState(sessionId, initialQuestionIndex);
+      const initialIndex =
+        parseInt(req.query.initialQuestionIndex as string, 10) || 1;
+      const sessionState = getOrCreateSessionState(sessionId, initialIndex);
       const silentContext = generateSilentContext(
         sessionState.currentQuestionIndex,
       );
+
       fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
-    }
 
-    const response = await openai.beta.realtime.sessions.create({
-      model: "gpt-4o-realtime-preview-2024-12-17",
-      voice: "alloy",
-      instructions: fullInstructions,
-      modalities: ["text", "audio"],
-      turn_detection: {
-        type: "server_vad",
-        threshold: 0.6,
-        prefix_padding_ms: 500,
-        silence_duration_ms: 2000,
-      },
-      input_audio_transcription: {
-        model: "whisper-1",
-        //language: "en",
-      },
-    });
-
-    console.log(
-      "OPENAI_RESPONSE_OK - Session created, token length:",
-      response.client_secret?.value?.length,
-    );
-
-    if (lessonNumber === 2 && lesson2State) {
-      console.log(
-        `[Lesson2Session] Session ${sessionId} ready at PART ${lesson2State.currentPart}, question ${lesson2State.currentQuestionInPart}`,
-      );
+      const response = await createRealtimeSession(fullInstructions);
       res.json({
         token: response.client_secret.value,
         mode: "simple",
         lesson: lessonNumber,
-        part: lesson2State.currentPart,
-        currentQuestionInPart: lesson2State.currentQuestionInPart,
-        totalQuestionsInPart: getLesson2PartQuestionCount(
-          lesson2State.currentPart,
-        ),
-        instructionsIncluded: true,
-        sessionId: sessionId,
-      });
-    } else if (sessionState) {
-      console.log(
-        `[SimpleSession] Session ${sessionId} ready at question ${sessionState.currentQuestionIndex}`,
-      );
-      res.json({
-        token: response.client_secret.value,
-        mode: "simple",
-        lesson: lessonNumber,
-        instructionsIncluded: true,
-        sessionId: sessionId,
+        sessionId,
         currentQuestionIndex: sessionState.currentQuestionIndex,
-        totalQuestions: TOTAL_QUESTIONS,
       });
     }
   } catch (error: any) {
-    console.error("=== OPENAI API ERROR ===");
-    console.error("Status:", error.status);
-    console.error("Code:", error.code);
-    console.error("Type:", error.type);
-    console.error("Message:", error.message);
-
-    if (error.status === 429 || error.code === "insufficient_quota") {
-      console.error("OPENAI_QUOTA_EXCEEDED");
-    } else if (error.status === 401) {
-      console.error("OPENAI_AUTH_ERROR");
-    } else {
-      console.error("OPENAI_OTHER_ERROR");
-    }
-
-    res.status(500).json({
-      error: "Failed to create simple session",
-      message: error.message,
-      openai_error_code: error.code,
-      openai_error_type: error.type,
-    });
+    res.status(500).json({ error: error.message });
   }
 });
+
+async function createRealtimeSession(instructions: string) {
+  return await openai.beta.realtime.sessions.create({
+    model: "gpt-4o-realtime-preview-2024-12-17",
+    voice: "alloy",
+    instructions: instructions,
+    modalities: ["text", "audio"],
+    turn_detection: {
+      type: "server_vad",
+      threshold: 0.6,
+      prefix_padding_ms: 500,
+      silence_duration_ms: 2500, // Aumentado para evitar interrupciones
+    },
+    input_audio_transcription: {
+      model: "whisper-1",
+    },
+  });
+}
 
 assistantRouter.post(
   "/simple-session/:sessionId/process-response",
   async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      const { aiTranscript, studentTranscript } = req.body;
+    const { sessionId } = req.params;
+    const { aiTranscript, studentTranscript } = req.body;
+    const sessionState = simpleSessionStates.get(sessionId);
 
-      if (!aiTranscript || typeof aiTranscript !== "string") {
-        return res.status(400).json({ error: "aiTranscript is required" });
-      }
+    if (!sessionState)
+      return res.status(404).json({ error: "Session not found" });
 
-      const sessionState = simpleSessionStates.get(sessionId);
-      if (!sessionState) {
-        console.log(
-          `[SimpleSession] Session ${sessionId} not found, creating new state`,
-        );
-        return res.status(404).json({ error: "Session not found" });
-      }
+    const currentIndex = sessionState.currentQuestionIndex;
 
-      const currentIndex = sessionState.currentQuestionIndex;
-
-      if (
-        typeof studentTranscript === "string" &&
-        isWhatDoesQuestion(currentIndex) &&
-        looksLikeEnglishAnswer(studentTranscript)
-      ) {
-        console.log(
-          `[WhatDoesGuard] BLOCKED English answer on Q${currentIndex + 1}: "${studentTranscript}"`,
-        );
-
-        return res.json({
-          sessionId,
-          previousIndex: currentIndex,
-          currentIndex,
-          advanced: false,
-          guardrailTriggered: true,
-          reason: "english_answer_on_spanish_required_question",
-          correctionInstruction:
-            "Aquí tienes que responder en español. Por ejemplo: 'employee' significa 'empleado'. Intenta otra vez en español.",
-          currentQuestion: getQuestionByIndex(currentIndex),
-        });
-      }
-
-      const detectedIndex = findQuestionIndex(aiTranscript);
-
-      console.log(
-        `[SimpleSession] Processing response for session ${sessionId}`,
-      );
-      console.log(
-        `[SimpleSession] Current index: ${currentIndex}, Detected in AI response: ${detectedIndex}`,
-      );
-
-      let advanced = false;
-      let newIndex = currentIndex;
-
-      const now = Date.now();
-      const timeSinceLastAdvance = now - sessionState.lastAdvancedAt;
-      const MIN_ADVANCE_INTERVAL = 2000;
-
-      if (
-        detectedIndex !== null &&
-        timeSinceLastAdvance >= MIN_ADVANCE_INTERVAL
-      ) {
-        if (detectedIndex === currentIndex + 1) {
-          sessionState.currentQuestionIndex = detectedIndex;
-          sessionState.lastAdvancedAt = now;
-          newIndex = detectedIndex;
-          advanced = true;
-          console.log(`[SimpleSession] Advanced to question ${newIndex}`);
-        } else if (detectedIndex === currentIndex) {
-          console.log(
-            `[SimpleSession] AI repeated question ${currentIndex}, not advancing`,
-          );
-        } else if (detectedIndex > currentIndex + 1) {
-          console.log(
-            `[SimpleSession] WARNING: AI tried to skip to question ${detectedIndex}, staying at ${currentIndex}`,
-          );
-        }
-      }
-
-      res.json({
-        sessionId,
-        previousIndex: currentIndex,
-        currentIndex: newIndex,
-        advanced,
-        detectedQuestionIndex: detectedIndex,
-        currentQuestion: getQuestionByIndex(newIndex),
-        totalQuestions: TOTAL_QUESTIONS,
-      });
-    } catch (error: any) {
-      console.error("[SimpleSession] Error processing response:", error);
-      res
-        .status(500)
-        .json({ error: "Failed to process response", message: error.message });
-    }
-  },
-);
-
-assistantRouter.get("/simple-session/:sessionId/state", (req, res) => {
-  const { sessionId } = req.params;
-  const sessionState = simpleSessionStates.get(sessionId);
-
-  if (!sessionState) {
-    return res.status(404).json({ error: "Session not found" });
-  }
-
-  res.json({
-    sessionId,
-    currentQuestionIndex: sessionState.currentQuestionIndex,
-    currentQuestion: getQuestionByIndex(sessionState.currentQuestionIndex),
-    totalQuestions: TOTAL_QUESTIONS,
-    createdAt: sessionState.createdAt,
-  });
-});
-
-assistantRouter.post("/lesson2-session/:sessionId/user-input", (req, res) => {
-  const { sessionId } = req.params;
-
-  const sessionState = lesson2SessionStates.get(sessionId);
-  if (!sessionState) {
-    return res.status(404).json({ error: "Lesson 2 session not found" });
-  }
-
-  sessionState.lastUserInputAt = Date.now();
-
-  console.log(
-    `[Lesson2Session] User input registered for session ${sessionId}`,
-  );
-
-  res.json({ ok: true });
-});
-
-assistantRouter.post(
-  "/lesson2-session/:sessionId/advance",
-  async (req, res) => {
-    try {
-      const { sessionId } = req.params;
-      const sessionState = lesson2SessionStates.get(sessionId);
-
-      if (!sessionState) {
-        return res.status(404).json({ error: "Lesson 2 session not found" });
-      }
-
-      const result = advanceLesson2Session(sessionState, sessionId);
-
-      if (result.blocked) {
-        return res.status(409).json({
-          error: result.blockReason,
-          currentPart: result.currentPart,
-          currentQuestionInPart: result.currentQuestionInPart,
-        });
-      }
-
-      res.json({
-        sessionId,
-        ...result,
-      });
-    } catch (error: any) {
-      console.error("[Lesson2Session] Error advancing:", error);
-      res.status(500).json({ error: "Failed to advance", message: error.message });
-    }
-  },
-);
-
-assistantRouter.get("/lesson2-session/:sessionId/state", (req, res) => {
-  const { sessionId } = req.params;
-  const sessionState = lesson2SessionStates.get(sessionId);
-
-  if (!sessionState) {
-    return res.status(404).json({ error: "Lesson 2 session not found" });
-  }
-
-  const part = sessionState.currentPart;
-  const q = sessionState.currentQuestionInPart;
-
-  res.json({
-    sessionId,
-    currentPart: part,
-    currentQuestionInPart: q,
-    totalQuestionsInPart: getLesson2PartQuestionCount(part),
-    currentQuestion: getLesson2Question(part, q),
-    partName: getLesson2Part(part)?.name,
-    createdAt: sessionState.createdAt,
-  });
-});
-
-assistantRouter.post("/lesson2-test", async (req, res) => {
-  try {
-    const { sessionId, studentMessage, part, question } = req.body;
-
-    if (!studentMessage || typeof studentMessage !== "string") {
-      return res.status(400).json({ error: "studentMessage is required" });
-    }
-
-    const sid = sessionId || `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const initialPart = part ? parseInt(part, 10) : 1;
-    const initialQuestion = question ? parseInt(question, 10) : 1;
-
-    const sessionState = getOrCreateLesson2SessionState(sid, initialPart, initialQuestion);
-    const now = Date.now();
-
-    sessionState.lastUserInputAt = now;
-    console.log(`[L2-TEST] User input: "${studentMessage}" | Session: ${sid}`);
-
-    const currentPart = sessionState.currentPart;
-    const currentQ = sessionState.currentQuestionInPart;
-    const context = generateLesson2Context(currentPart, currentQ);
-    const currentQuestion = getLesson2Question(currentPart, currentQ);
-    const partInfo = getLesson2Part(currentPart);
-
-    const systemPrompt = `${SIMPLE_CONVERSATION_PROMPT_2}
-
-${context}
-
-You are currently asking the student: "${currentQuestion}"
-Part: ${partInfo?.name || `PART ${currentPart}`}
-
-IMPORTANT: You must respond with valid JSON in this exact format:
-{
-  "correct": true or false,
-  "response": "Your natural response to the student"
-}
-
-- Set "correct": true if the student answered correctly (even with minor issues that don't need correction)
-- Set "correct": false if the student made a significant error that requires correction
-- In "response", write your natural reply. If incorrect, gently correct in Spanish and ask again.`;
-
-    const openai = new OpenAI();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      temperature: 0.3,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: studentMessage },
-      ],
-    });
-
-    const rawResponse = completion.choices[0]?.message?.content || "{}";
-    let parsed: { correct?: boolean; response?: string } = {};
-    try {
-      parsed = JSON.parse(rawResponse);
-    } catch {
-      console.error("[L2-TEST] Failed to parse AI JSON:", rawResponse);
-      parsed = { correct: false, response: rawResponse };
-    }
-
-    const isCorrect = parsed.correct === true;
-    const aiResponse = parsed.response || rawResponse;
-
-    console.log(`[L2-TEST] AI response (correct=${isCorrect}): "${aiResponse.substring(0, 80)}..."`);
-
-    let advanceResult: Lesson2AdvanceResult;
-
-    if (isCorrect) {
-      advanceResult = advanceLesson2Session(sessionState, sid);
-      console.log(`[L2-TEST] ✅ Correct answer - advancing`);
-    } else {
-      console.log(`[L2-TEST] ❌ Incorrect answer - NOT advancing`);
-      advanceResult = {
-        success: true,
-        previousPart: currentPart,
-        previousQuestion: currentQ,
-        currentPart,
-        currentQuestionInPart: currentQ,
-        totalQuestionsInPart: getLesson2PartQuestionCount(currentPart),
-        currentQuestion: currentQuestion,
+    // Guardrail para traducciones
+    if (
+      typeof studentTranscript === "string" &&
+      isWhatDoesQuestion(currentIndex) &&
+      looksLikeEnglishAnswer(studentTranscript)
+    ) {
+      return res.json({
         advanced: false,
-        partAdvanced: false,
-        lessonComplete: false,
-        nextContext: null,
-      };
+        guardrailTriggered: true,
+        correctionInstruction: "Responde en español, por favor.",
+      });
+    }
+
+    const detectedIndex = findQuestionIndex(aiTranscript);
+    const now = Date.now();
+    let advanced = false;
+
+    if (
+      detectedIndex === currentIndex + 1 &&
+      now - sessionState.lastAdvancedAt > 2000
+    ) {
+      sessionState.currentQuestionIndex = detectedIndex;
+      sessionState.lastAdvancedAt = now;
+      advanced = true;
     }
 
     res.json({
-      sessionId: sid,
-      studentMessage,
-      aiResponse,
-      isCorrect,
-      previousState: {
-        part: advanceResult.previousPart,
-        question: advanceResult.previousQuestion,
-        questionText: currentQuestion,
-        partName: partInfo?.name,
-      },
-      currentState: {
-        part: advanceResult.currentPart,
-        question: advanceResult.currentQuestionInPart,
-        questionText: advanceResult.currentQuestion,
-        partName: getLesson2Part(advanceResult.currentPart)?.name,
-        totalQuestionsInPart: advanceResult.totalQuestionsInPart,
-      },
-      advanced: advanceResult.advanced,
-      partAdvanced: advanceResult.partAdvanced,
-      lessonComplete: advanceResult.lessonComplete,
+      advanced,
+      currentIndex: sessionState.currentQuestionIndex,
+      currentQuestion: getQuestionByIndex(sessionState.currentQuestionIndex),
     });
-  } catch (error: any) {
-    console.error("[L2-TEST] Error:", error);
-    res.status(500).json({ error: "Test failed", message: error.message });
-  }
-});
+  },
+);
 
-interface TextChatMessage {
-  role: "user" | "assistant";
-  content: string;
+// Helper para estados
+function getOrCreateSessionState(id: string, idx: number): SimpleSessionState {
+  if (!simpleSessionStates.has(id)) {
+    simpleSessionStates.set(id, {
+      currentQuestionIndex: idx,
+      lastAdvancedAt: 0,
+      createdAt: Date.now(),
+    });
+  }
+  return simpleSessionStates.get(id)!;
 }
 
-assistantRouter.post("/text-chat", async (req, res) => {
-  try {
-    const { message, lesson, history } = req.body;
-
-    if (!message || typeof message !== "string") {
-      return res.status(400).json({ error: "Message is required" });
-    }
-
-    let lessonNumber = 1;
-    if (lesson) {
-      const parsed = parseInt(lesson, 10);
-      if (!isNaN(parsed) && validateLesson(parsed)) {
-        lessonNumber = parsed;
-      }
-    }
-
-    const basePrompt = getBasePrompt();
-
-    const messages: {
-      role: "system" | "user" | "assistant";
-      content: string;
-    }[] = [];
-
-    if (lessonNumber === 1) {
-      const masterPrompt = getLesson1MasterPrompt();
-      const stepPrompt = getLesson1Step("NAME");
-      messages.push({ role: "system", content: basePrompt });
-      messages.push({
-        role: "assistant",
-        content: masterPrompt + "\n\n" + stepPrompt,
-      });
-    } else {
-      const lessonPrompt = getLessonPrompt(lessonNumber);
-      messages.push({ role: "system", content: basePrompt });
-      messages.push({ role: "assistant", content: lessonPrompt });
-    }
-
-    if (history && Array.isArray(history)) {
-      for (const msg of history as TextChatMessage[]) {
-        if (msg.role === "user" || msg.role === "assistant") {
-          messages.push({ role: msg.role, content: msg.content });
-        }
-      }
-    }
-
-    messages.push({ role: "user", content: message });
-
-    console.log(
-      `Text chat for Lesson ${lessonNumber}: "${message.substring(0, 50)}..."`,
-    );
-
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: messages,
-      max_tokens: 500,
-      temperature: 0.3,
-    });
-
-    const assistantMessage =
-      response.choices[0]?.message?.content ||
-      "Lo siento, no pude generar una respuesta.";
-
-    res.json({
-      response: assistantMessage,
-      lesson: lessonNumber,
-    });
-  } catch (error: any) {
-    console.error("Error in text chat:", error);
-    res.status(500).json({
-      error: "Failed to get response",
-      message: error.message,
+function getOrCreateLesson2SessionState(
+  id: string,
+  part: number,
+  q: number,
+): Lesson2SessionState {
+  if (!lesson2SessionStates.has(id)) {
+    lesson2SessionStates.set(id, {
+      currentPart: part,
+      currentQuestionInPart: q,
+      lastAdvancedAt: 0,
+      lastUserInputAt: 0,
+      createdAt: Date.now(),
     });
   }
-});
+  return lesson2SessionStates.get(id)!;
+}
