@@ -210,20 +210,34 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
         // Inicializar sesión con prompt estricto si es Lección 1
         if (lesson === 1) {
-          dc.send(
-            JSON.stringify({
-              type: "session.update",
-              session: {
-                instructions: SIMPLE_CONVERSATION_PROMPT,
-                tool_choice: "none",
-                temperature: 0.6,
-              },
-            }),
-          );
+        const question1Text = "Hi, I'm your conversation partner from The Language School. What is your name?";
+
+           // 🚩 LA CLAVE: Concatenamos la orden imperativa al final del prompt
+           const strictStartInstructions = `
+      ${SIMPLE_CONVERSATION_PROMPT}
+
+      ### CRITICAL STARTUP INSTRUCTION ###
+      - IGNORE ALL SMALL TALK.
+      - YOU ARE STARTING THE SESSION NOW.
+      - YOUR CURRENT TARGET IS QUESTION INDEX: 1.
+      - YOU MUST IMMEDIATELY ASK: "${question1Text}"
+      - DO NOT ASK about "days of the week", "hobbies", or anything else.
+      `;
+
+           dc.send(JSON.stringify({
+             type: "session.update",
+             session: {
+               instructions: strictStartInstructions,
+               tool_choice: "none",
+               temperature: 0.6
+             }
+           }));
         }
 
         // Iniciamos el semáforo en rojo hasta que el usuario hable
         expectingResponseRef.current = false;
+
+        // 🚩 Disparamos la respuesta para que la IA obedezca la instrucción de arriba YA MISMO
         requestModelResponse();
       };
 
