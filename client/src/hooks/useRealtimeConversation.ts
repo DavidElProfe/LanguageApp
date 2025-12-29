@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { SIMPLE_CONVERSATION_PROMPT } from "../../../server/prompts/simpleConversationPrompt";
+import { SIMPLE_CONVERSATION_PROMPT_2 } from "../../../server/prompts/simpleConversationPrompt2";
 
 /* =====================================================
     TYPES & CONSTANTS
@@ -208,30 +209,55 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
       dc.onopen = () => {
         setConnectionState("active");
 
-        // Inicializar sesión con prompt estricto si es Lección 1
+        // Inicializar sesión con prompt estricto
         if (lesson === 1) {
-        const question1Text = "Hi, I'm your conversation partner from The Language School. What is your name?";
+          const question1Text = "Hi, I'm your conversation partner from The Language School. What is your name?";
 
-           // 🚩 LA CLAVE: Concatenamos la orden imperativa al final del prompt
-           const strictStartInstructions = `
-      ${SIMPLE_CONVERSATION_PROMPT}
+          const strictStartInstructions = `
+${SIMPLE_CONVERSATION_PROMPT}
 
-      ### CRITICAL STARTUP INSTRUCTION ###
-      - IGNORE ALL SMALL TALK.
-      - YOU ARE STARTING THE SESSION NOW.
-      - YOUR CURRENT TARGET IS QUESTION INDEX: 1.
-      - YOU MUST IMMEDIATELY ASK: "${question1Text}"
-      - DO NOT ASK about "days of the week", "hobbies", or anything else.
-      `;
+### CRITICAL STARTUP INSTRUCTION ###
+- IGNORE ALL SMALL TALK.
+- YOU ARE STARTING THE SESSION NOW.
+- YOUR CURRENT TARGET IS QUESTION INDEX: 1.
+- YOU MUST IMMEDIATELY ASK: "${question1Text}"
+- DO NOT ASK about "days of the week", "hobbies", or anything else.
+- WAIT FOR THE STUDENT TO RESPOND BEFORE ASKING ANOTHER QUESTION.
+`;
 
-           dc.send(JSON.stringify({
-             type: "session.update",
-             session: {
-               instructions: strictStartInstructions,
-               tool_choice: "none",
-               temperature: 0.6
-             }
-           }));
+          dc.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              instructions: strictStartInstructions,
+              tool_choice: "none",
+              temperature: 0.6
+            }
+          }));
+        } else if (lesson === 2) {
+          const question1Text = "What is your name?";
+
+          const strictStartInstructions = `
+${SIMPLE_CONVERSATION_PROMPT_2}
+
+### CRITICAL STARTUP INSTRUCTION ###
+- YOU ARE IN PART 1: MAKING FRIENDS.
+- IGNORE ALL SMALL TALK.
+- YOU ARE STARTING THE SESSION NOW.
+- ASK ONLY ONE QUESTION AT A TIME.
+- YOU MUST IMMEDIATELY ASK: "${question1Text}"
+- AFTER ASKING, STOP COMPLETELY AND WAIT FOR THE STUDENT TO RESPOND.
+- DO NOT ASK A SECOND QUESTION UNTIL THE STUDENT HAS ANSWERED.
+- DO NOT COMBINE QUESTIONS.
+`;
+
+          dc.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              instructions: strictStartInstructions,
+              tool_choice: "none",
+              temperature: 0.3
+            }
+          }));
         }
 
         // Iniciamos el semáforo en rojo hasta que el usuario hable
