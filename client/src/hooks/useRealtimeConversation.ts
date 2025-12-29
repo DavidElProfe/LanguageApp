@@ -236,7 +236,14 @@ ${SIMPLE_CONVERSATION_PROMPT}
             session: {
               instructions: strictStartInstructions,
               tool_choice: "none",
-              temperature: 0.6
+              temperature: 0.6,
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 800,
+                create_response: false  // 🚩 Desactivamos auto-response del servidor
+              }
             }
           }));
         } else if (lesson === 2) {
@@ -261,7 +268,14 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             session: {
               instructions: strictStartInstructions,
               tool_choice: "none",
-              temperature: 0.3
+              temperature: 0.3,
+              turn_detection: {
+                type: "server_vad",
+                threshold: 0.5,
+                prefix_padding_ms: 300,
+                silence_duration_ms: 800,
+                create_response: false  // 🚩 Desactivamos auto-response del servidor
+              }
             }
           }));
         }
