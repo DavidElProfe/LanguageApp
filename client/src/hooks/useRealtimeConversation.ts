@@ -150,12 +150,18 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
   const requestModelResponse = () => {
     // Solo disparar si: 1) podemos avanzar, 2) canal abierto, 3) IA no está hablando
-    if (canAdvanceRef.current && dcRef.current?.readyState === "open" && !isAISpeakingRef.current) {
+    if (
+      canAdvanceRef.current &&
+      dcRef.current?.readyState === "open" &&
+      !isAISpeakingRef.current
+    ) {
       console.log("[REQUEST_MODEL_RESPONSE] Triggering response.create");
       isAISpeakingRef.current = true; // Marcamos que la IA va a hablar
       dcRef.current.send(JSON.stringify({ type: "response.create" }));
     } else {
-      console.log("[REQUEST_MODEL_RESPONSE] BLOCKED - AI already speaking or cannot advance");
+      console.log(
+        "[REQUEST_MODEL_RESPONSE] BLOCKED - AI already speaking or cannot advance",
+      );
     }
   };
 
@@ -217,7 +223,8 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
         // Inicializar sesión con prompt estricto
         if (lesson === 1) {
-          const question1Text = "Hi, I'm your conversation partner from The Language School. What is your name?";
+          const question1Text =
+            "Hi, I'm your conversation partner from The Language School. What is your name?";
 
           const strictStartInstructions = `
 ${SIMPLE_CONVERSATION_PROMPT}
@@ -231,21 +238,23 @@ ${SIMPLE_CONVERSATION_PROMPT}
 - WAIT FOR THE STUDENT TO RESPOND BEFORE ASKING ANOTHER QUESTION.
 `;
 
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: {
-              instructions: strictStartInstructions,
-              tool_choice: "none",
-              temperature: 0.6,
-              turn_detection: {
-                type: "server_vad",
-                threshold: 0.5,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 800,
-                create_response: false  // 🚩 Desactivamos auto-response del servidor
-              }
-            }
-          }));
+          dc.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions: strictStartInstructions,
+                tool_choice: "none",
+                temperature: 0.6,
+                turn_detection: {
+                  type: "server_vad",
+                  threshold: 0.5,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 800,
+                  turn_detection: null,
+                },
+              },
+            }),
+          );
         } else if (lesson === 2) {
           const question1Text = "What is your name?";
 
@@ -263,21 +272,23 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
 - DO NOT COMBINE QUESTIONS.
 `;
 
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: {
-              instructions: strictStartInstructions,
-              tool_choice: "none",
-              temperature: 0.3,
-              turn_detection: {
-                type: "server_vad",
-                threshold: 0.5,
-                prefix_padding_ms: 300,
-                silence_duration_ms: 800,
-                create_response: false  // 🚩 Desactivamos auto-response del servidor
-              }
-            }
-          }));
+          dc.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions: strictStartInstructions,
+                tool_choice: "none",
+                temperature: 0.3,
+                turn_detection: {
+                  type: "server_vad",
+                  threshold: 0.5,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 800,
+                  create_response: false, // 🚩 Desactivamos auto-response del servidor
+                },
+              },
+            }),
+          );
         }
 
         // Iniciamos el semáforo en rojo hasta que el usuario hable
@@ -296,20 +307,29 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
         ) {
           const text = data.transcript?.trim();
 
-          const isGarbage = !text || text.length < 3 || /^(swooshy|electrolytes|uh|um)$/i.test(text);
+          const isGarbage =
+            !text ||
+            text.length < 3 ||
+            /^(swooshy|electrolytes|uh|um)$/i.test(text);
 
           if (isGarbage) {
-            console.log(`[GARBAGE DETECTED] "${text}" - Cancelling AI response.`);
+            console.log(
+              `[GARBAGE DETECTED] "${text}" - Cancelling AI response.`,
+            );
 
-            dcRef.current?.send(JSON.stringify({ 
-              type: "response.cancel" 
-            }));
+            dcRef.current?.send(
+              JSON.stringify({
+                type: "response.cancel",
+              }),
+            );
 
             if (data.item_id) {
-               dcRef.current?.send(JSON.stringify({ 
-                 type: "conversation.item.delete",
-                 item_id: data.item_id
-               }));
+              dcRef.current?.send(
+                JSON.stringify({
+                  type: "conversation.item.delete",
+                  item_id: data.item_id,
+                }),
+              );
             }
             return;
           }
@@ -387,11 +407,11 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
         // --- 2. IA RESPONDE ---
         if (data.type === "response.audio_transcript.done") {
           const assistantText = data.transcript?.trim();
-          
+
           // 🚩 RESET: La IA terminó de hablar, permitir nuevo turno
           isAISpeakingRef.current = false;
           console.log("[AI_DONE] Reset isAISpeakingRef = false");
-          
+
           if (!assistantText) return;
 
           // Solo avanzamos si el semáforo estaba verde
