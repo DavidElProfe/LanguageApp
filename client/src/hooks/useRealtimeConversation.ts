@@ -1,11 +1,12 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { SIMPLE_CONVERSATION_PROMPT } from "../../../server/prompts/simpleConversationPrompt";
 import { SIMPLE_CONVERSATION_PROMPT_2 } from "../../../server/prompts/simpleConversationPrompt2";
 
 /* =====================================================
-   TYPES & CONSTANTS
+    TYPES & CONSTANTS
 ===================================================== */
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
+type Lesson1Step = "NAME" | "FROM" | "LIVE" | "WORK" | "LIKE" | "DONE";
 
 export interface ConversationMessage {
   id: string;
@@ -40,7 +41,7 @@ const WHAT_DOES_ANSWERS: Record<number, string[]> = {
 };
 
 /* =====================================================
-   VALIDATORS
+    VALIDATORS
 ===================================================== */
 
 function isWhatDoesQuestion(index: number): boolean {
@@ -79,165 +80,95 @@ function looksLikeValidSpanishMeaning(text: string, qIndex: number): boolean {
   return expected.some((w) => t.includes(normalize(w)));
 }
 
-function validateStudentGrammar(text: string) {
+function validateStudentGrammar(text: string): {
+  isValid: boolean;
+  feedback?: string;
+} {
   const t = text.toLowerCase();
 
+  // 1. Contracciones
   const forbidden = ["don't", "can't", "won't", "it's", "i'm"];
   const found = forbidden.find((c) => t.includes(c));
   if (found) {
     return {
       isValid: false,
-      feedback: "No uses contracciones. Usa la forma completa (ej: do not).",
+      feedback:
+        "No uses contracciones. Por favor, di la forma completa (ejemplo: 'do not' en lugar de 'don't').",
     };
   }
 
+  // 2. Like to
   if (t.includes("like") && !t.includes("like to")) {
-    // (tu check original era medio agresivo; lo dejo igual)
-    return {
-      isValid: false,
-      feedback: "Recuerda usar 'like to' antes del verbo. Ej: I like to cook.",
-    };
+    const verbs = [
+      "play",
+      "cook",
+      "read",
+      "dance",
+      "study",
+      "watch",
+      "ride",
+      "go",
+      "practice",
+    ];
+    if (verbs.some((v) => t.includes(v))) {
+      return {
+        isValid: false,
+        feedback:
+          "Casi 😄 Recuerda usar 'like to' antes del verbo. Por ejemplo: 'I like to cook'.",
+      };
+    }
   }
-
   return { isValid: true };
 }
 
 /* =====================================================
-   HOOK
+    HOOK: useRealtimeConversation
 ===================================================== */
+
 export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
+  const [currentStep] = useState<Lesson1Step>("NAME");
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  const sessionIdRef = useRef<string | null>(null);
   const currentQuestionIndexRef = useRef<number>(0);
+  const sessionIdRef = useRef<string | null>(null);
   const currentPartRef = useRef<number>(1);
   const currentQuestionInPartRef = useRef<number>(1);
 
-  const isProcessingRef = useRef(false);
-
-  // guardamos el último input del alumno para mandarlo al backend si querés
-  const lastStudentTranscriptRef = useRef<string>("");
-
-  /* ===== TURN STATE ===== */
-  type TurnState =
-    | "AI_PREPARING_RESPONSE"
-    | "AI_SPEAKING"
-    | "WAITING_FOR_USER"
-    | "PROCESSING_USER";
-
-  const turnStateRef = useRef<TurnState>("AI_PREPARING_RESPONSE");
-
-  // 🔑 para evitar el bug: NO response.create hasta session.updated
-  const sessionUpdatedRef = useRef(false);
-  const pendingInitialResponseRef = useRef(false);
-
-  // 🔇 para evitar “audio antes del prompt”: muteamos tracks hasta session.updated
-  const micEnabledRef = useRef(false);
+  // --- CONTROL DE FLUJO Y SEMÁFORO ---
+  const canAdvanceRef = useRef(true); // Bloqueo lógico (gramática/idioma)
+  const expectingResponseRef = useRef(false); // SEMÁFORO (Turn Lock)
+  const isProcessingRef = useRef(false); // Bloqueo de red
+  const isAISpeakingRef = useRef(false); // 🚩 NUEVO: Evita doble turno
 
   const requestModelResponse = () => {
-    if (!sessionUpdatedRef.current) {
-      console.log("[BLOCK] response.create before session.updated");
-      pendingInitialResponseRef.current = true;
-      return;
+    // Solo disparar si: 1) podemos avanzar, 2) canal abierto, 3) IA no está hablando
+    if (canAdvanceRef.current && dcRef.current?.readyState === "open" && !isAISpeakingRef.current) {
+      console.log("[REQUEST_MODEL_RESPONSE] Triggering response.create");
+      isAISpeakingRef.current = true; // Marcamos que la IA va a hablar
+      dcRef.current.send(JSON.stringify({ type: "response.create" }));
+    } else {
+      console.log("[REQUEST_MODEL_RESPONSE] BLOCKED - AI already speaking or cannot advance");
     }
-    if (turnStateRef.current !== "AI_PREPARING_RESPONSE") return;
-    if (dcRef.current?.readyState !== "open") return;
-
-    console.log("[TURN] AI_PREPARING_RESPONSE → AI_SPEAKING");
-    turnStateRef.current = "AI_SPEAKING";
-    dcRef.current.send(JSON.stringify({ type: "response.create" }));
-  };
-
-  // 🔁 Inyecta la próxima pregunta en la sesión Realtime
-  const injectNextQuestion = (questionText: string) => {
-    const basePrompt =
-      lesson === 1 ? SIMPLE_CONVERSATION_PROMPT : SIMPLE_CONVERSATION_PROMPT_2;
-
-    const instructions = `
-  ${basePrompt}
-
-  CURRENT_QUESTION = "${questionText}"
-
-  RULES:
-  - Ask EXACTLY CURRENT_QUESTION.
-  - Ask it ONCE.
-  - Do NOT add anything else.
-  - Then STOP and WAIT.
-  `;
-
-    pendingInitialResponseRef.current = true;
-
-    dcRef.current?.send(
-      JSON.stringify({
-        type: "session.update",
-        session: {
-          instructions,
-          tool_choice: "none",
-          temperature: lesson === 1 ? 0.6 : 0.3,
-          turn_detection: null,
-        },
-      }),
-    );
-
-    console.log("[NEXT QUESTION INJECTED]", questionText);
-  };
-
-  const enableMicTracks = () => {
-    if (micEnabledRef.current) return;
-    micEnabledRef.current = true;
-
-    const stream = mediaStreamRef.current;
-    if (!stream) return;
-
-    stream.getAudioTracks().forEach((t) => {
-      t.enabled = true;
-    });
-
-    console.log("[AUDIO] Mic enabled after session.updated");
-  };
-
-  const disableMicTracks = () => {
-    const stream = mediaStreamRef.current;
-    if (!stream) return;
-
-    stream.getAudioTracks().forEach((t) => {
-      t.enabled = false;
-    });
-
-    micEnabledRef.current = false;
-    console.log("[AUDIO] Mic disabled (pre-session.updated)");
   };
 
   const stopConversation = async () => {
-    try {
-      mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-    } catch {}
-    try {
-      dcRef.current?.close();
-    } catch {}
-    try {
-      pcRef.current?.close();
-    } catch {}
-    try {
-      audioRef.current?.remove();
-    } catch {}
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    dcRef.current?.close();
+    pcRef.current?.close();
+    audioRef.current?.remove();
 
     mediaStreamRef.current = null;
     dcRef.current = null;
     pcRef.current = null;
     audioRef.current = null;
-
-    sessionUpdatedRef.current = false;
-    pendingInitialResponseRef.current = false;
-    micEnabledRef.current = false;
 
     setConnectionState("ended");
   };
@@ -245,41 +176,37 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const startConversation = async () => {
     try {
       setConnectionState("connecting");
-      setErrorMessage("");
-
-      sessionUpdatedRef.current = false;
-      pendingInitialResponseRef.current = false;
-      lastStudentTranscriptRef.current = "";
 
       const tokenRes = await fetch(
         `/api/assistant/simple-session?lesson=${lesson}&part=${part}`,
       );
       const response = await tokenRes.json();
+      const {
+        token,
+        sessionId,
+        currentQuestionIndex,
+        currentQuestionInPart,
+        part: responsePart,
+      } = response;
 
-      sessionIdRef.current = response.sessionId;
-      currentQuestionIndexRef.current = response.currentQuestionIndex ?? 0;
-
-      // si lesson 2 te devuelve part / currentQuestionInPart, guardalos
+      sessionIdRef.current = sessionId;
       if (lesson === 2) {
-        currentPartRef.current = response.part ?? part;
-        currentQuestionInPartRef.current = response.currentQuestionInPart ?? 1;
+        currentPartRef.current = responsePart ?? part;
+        currentQuestionInPartRef.current = currentQuestionInPart ?? 1;
+      } else {
+        currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
       }
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
-
       const audio = document.createElement("audio");
       audio.autoplay = true;
       document.body.appendChild(audio);
       audioRef.current = audio;
-
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
 
-      // 1) Pedimos mic, pero lo dejamos “muteado” hasta session.updated
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      disableMicTracks(); // 🔒 clave
-
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
       const dc = pc.createDataChannel("oai-events");
@@ -287,143 +214,149 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
       dc.onopen = () => {
         setConnectionState("active");
-        console.log("[DC] open");
 
-        const basePrompt =
-          lesson === 1
-            ? SIMPLE_CONVERSATION_PROMPT
-            : SIMPLE_CONVERSATION_PROMPT_2;
+        // Inicializar sesión con prompt estricto
+        if (lesson === 1) {
+          const question1Text = "Hi, I'm your conversation partner from The Language School. What is your name?";
 
-        const firstQuestion =
-          lesson === 1
-            ? `Hi, I'm your conversation partner from The Language School. What is your name?`
-            : `What is your name?`;
+          const strictStartInstructions = `
+${SIMPLE_CONVERSATION_PROMPT}
 
-        const instructions = `
-        ${basePrompt}
+### CRITICAL STARTUP INSTRUCTION ###
+- IGNORE ALL SMALL TALK.
+- YOU ARE STARTING THE SESSION NOW.
+- YOUR CURRENT TARGET IS QUESTION INDEX: 1.
+- YOU MUST IMMEDIATELY ASK: "${question1Text}"
+- DO NOT ASK about "days of the week", "hobbies", or anything else.
+- WAIT FOR THE STUDENT TO RESPOND BEFORE ASKING ANOTHER QUESTION.
+`;
 
-        # SYSTEM START (ABSOLUTE)
-
-        CURRENT_QUESTION = "${firstQuestion}"
-
-        CONSTRAINTS:
-        - You MUST ask EXACTLY CURRENT_QUESTION.
-        - You are NOT allowed to ask any other question.
-        - Do NOT add greetings.
-        - Do NOT add context.
-        - Ask it ONCE.
-        - After asking, STOP and WAIT.
-
-        # END SYSTEM START
-        `;
-
-        // 2) Mandamos session.update, pero NO disparamos response.create todavía
-        //    (esperamos session.updated)
-        pendingInitialResponseRef.current = true;
-
-        dc.send(
-          JSON.stringify({
+          dc.send(JSON.stringify({
             type: "session.update",
             session: {
-              instructions,
+              instructions: strictStartInstructions,
               tool_choice: "none",
-              temperature: lesson === 1 ? 0.6 : 0.3,
-              // ✅ Realtime JSON acepta null para desactivar VAD / turn detection
-              // Si tu TS se queja en otro lugar, acá es string JSON, no tipado.
-              turn_detection: null,
-            } as any,
-          }),
-        );
+              temperature: 0.6
+            }
+          }));
+        } else if (lesson === 2) {
+          const question1Text = "What is your name?";
 
-        console.log("[SESSION_UPDATE_SENT]");
+          const strictStartInstructions = `
+${SIMPLE_CONVERSATION_PROMPT_2}
+
+### CRITICAL STARTUP INSTRUCTION ###
+- YOU ARE IN PART 1: MAKING FRIENDS.
+- IGNORE ALL SMALL TALK.
+- YOU ARE STARTING THE SESSION NOW.
+- ASK ONLY ONE QUESTION AT A TIME.
+- YOU MUST IMMEDIATELY ASK: "${question1Text}"
+- AFTER ASKING, STOP COMPLETELY AND WAIT FOR THE STUDENT TO RESPOND.
+- DO NOT ASK A SECOND QUESTION UNTIL THE STUDENT HAS ANSWERED.
+- DO NOT COMBINE QUESTIONS.
+`;
+
+          dc.send(JSON.stringify({
+            type: "session.update",
+            session: {
+              instructions: strictStartInstructions,
+              tool_choice: "none",
+              temperature: 0.3
+            }
+          }));
+        }
+
+        // Iniciamos el semáforo en rojo hasta que el usuario hable
+        expectingResponseRef.current = false;
+
+        // 🚩 Disparamos la respuesta para que la IA obedezca la instrucción de arriba YA MISMO
+        requestModelResponse();
       };
 
       dc.onmessage = (event) => {
         const data = JSON.parse(event.data);
 
-        // 🔎 log de todo (para confirmar orden real)
-        console.log("[DC EVENT]", data.type, data);
-
-        // ✅ confirmación de que el prompt ya está aplicado
-        if (data.type === "session.updated") {
-          sessionUpdatedRef.current = true;
-
-          // habilitamos mic recién ahora
-          enableMicTracks();
-
-          if (pendingInitialResponseRef.current) {
-            pendingInitialResponseRef.current = false;
-            turnStateRef.current = "AI_PREPARING_RESPONSE";
-            requestModelResponse();
-          }
-          return;
-        }
-
-        /* USER */
+        // --- 1. USUARIO HABLA ---
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
-          // Solo aceptamos input si esperamos al usuario
-          if (turnStateRef.current !== "WAITING_FOR_USER") return;
-
           const text = data.transcript?.trim();
-          if (!text) return;
 
-          // basura rápida
-          if (text.length < 2) return;
+          const isGarbage = !text || text.length < 3 || /^(swooshy|electrolytes|uh|um)$/i.test(text);
 
-          lastStudentTranscriptRef.current = text;
+          if (isGarbage) {
+            console.log(`[GARBAGE DETECTED] "${text}" - Cancelling AI response.`);
 
-          turnStateRef.current = "PROCESSING_USER";
+            dcRef.current?.send(JSON.stringify({ 
+              type: "response.cancel" 
+            }));
 
-          const qIndex = currentQuestionIndexRef.current;
-
-          // grammar
-          const grammar = validateStudentGrammar(text);
-          if (!grammar.isValid) {
-            // corrección (una sola respuesta)
-            dc.send(
-              JSON.stringify({
-                type: "response.create",
-                response: { instructions: grammar.feedback },
-              }),
-            );
-            turnStateRef.current = "AI_PREPARING_RESPONSE";
+            if (data.item_id) {
+               dcRef.current?.send(JSON.stringify({ 
+                 type: "conversation.item.delete",
+                 item_id: data.item_id
+               }));
+            }
             return;
           }
 
-          // what does guardrail
+          // Filtro de ruido
+          if (!text || text.length < 2) {
+            // Si es ruido, NO tocamos el semáforo. Dejamos que siga en el estado que estaba.
+            return;
+          }
+
+          const qIndex = currentQuestionIndexRef.current;
+
+          // Validar gramática
+          const grammar = validateStudentGrammar(text);
+          if (!grammar.isValid) {
+            canAdvanceRef.current = false;
+            expectingResponseRef.current = false; // Bloqueamos semáforo (va a corregir)
+            dcRef.current?.send(
+              JSON.stringify({
+                type: "response.create",
+                response: {
+                  instructions: `Error: "${text}". Feedback: ${grammar.feedback}. Execute CORRECTION ALGORITHM.`,
+                },
+              }),
+            );
+            return;
+          }
+
+          // Validar idioma (What does)
           if (isWhatDoesQuestion(qIndex)) {
             if (looksLikeEnglish(text)) {
-              dc.send(
+              canAdvanceRef.current = false;
+              expectingResponseRef.current = false;
+              dcRef.current?.send(
                 JSON.stringify({
                   type: "response.create",
                   response: {
-                    instructions: `Answer in Spanish. Repeat: "${getWhatDoesQuestionText(
-                      qIndex,
-                    )}"`,
+                    instructions: `Error: Answered in English. Tell student to translate to Spanish and repeat: "${getWhatDoesQuestionText(qIndex)}"`,
                   },
                 }),
               );
-              turnStateRef.current = "AI_PREPARING_RESPONSE";
               return;
             }
-
             if (!looksLikeValidSpanishMeaning(text, qIndex)) {
-              dc.send(
+              canAdvanceRef.current = false;
+              expectingResponseRef.current = false;
+              dcRef.current?.send(
                 JSON.stringify({
                   type: "response.create",
                   response: {
-                    instructions: `Incorrect meaning. Explain in Spanish and repeat: "${getWhatDoesQuestionText(
-                      qIndex,
-                    )}"`,
+                    instructions: `Error: Incorrect meaning. Explain in Spanish and repeat: "${getWhatDoesQuestionText(qIndex)}"`,
                   },
                 }),
               );
-              turnStateRef.current = "AI_PREPARING_RESPONSE";
               return;
             }
           }
+
+          // Respuesta válida
+          canAdvanceRef.current = true;
+          expectingResponseRef.current = true; // SEMÁFORO VERDE: Esperamos respuesta de IA para avanzar
 
           setMessages((m) => [
             ...m,
@@ -434,90 +367,140 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
               timestamp: Date.now(),
             },
           ]);
-
-          turnStateRef.current = "AI_PREPARING_RESPONSE";
           requestModelResponse();
         }
 
-        /* AI */
+        // --- 2. IA RESPONDE ---
         if (data.type === "response.audio_transcript.done") {
-          const text = data.transcript?.trim();
-          if (!text) return;
+          const assistantText = data.transcript?.trim();
+          if (!assistantText) return;
+
+          // Solo avanzamos si el semáforo estaba verde
+          if (expectingResponseRef.current) {
+            handleAdvanceLogic(assistantText);
+            expectingResponseRef.current = false; // Volvemos a rojo
+          } else {
+            console.log(
+              "🔒 [LOCKED] AI spoke but advance logic skipped (Semaphore Red)",
+            );
+          }
 
           setMessages((m) => [
             ...m,
             {
               id: crypto.randomUUID(),
               role: "assistant",
-              text,
+              text: assistantText,
               timestamp: Date.now(),
             },
           ]);
-
-          // cuando la IA termina, esperamos al usuario
-          turnStateRef.current = "WAITING_FOR_USER";
-
-          // avance de lógica (cambia pregunta/parte)
-          handleAdvanceLogic(text);
         }
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       const sdpRes = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${response.token}`,
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/sdp",
             "OpenAI-Beta": "realtime=v1",
           },
           body: offer.sdp,
         },
       );
-
       await pc.setRemoteDescription({
         type: "answer",
         sdp: await sdpRes.text(),
       });
-    } catch (e) {
-      console.error(e);
-      setErrorMessage("Error al iniciar conversación");
-      await stopConversation();
+    } catch (err) {
+      console.error(err);
+      setErrorMessage("Error al iniciar la conversación");
+      stopConversation();
     }
   };
 
+  // --- LÓGICA DE AVANCE CENTRALIZADA ---
   const handleAdvanceLogic = async (aiTranscript: string) => {
-    if (!sessionIdRef.current || isProcessingRef.current) return;
+    if (
+      !sessionIdRef.current ||
+      !canAdvanceRef.current ||
+      isProcessingRef.current
+    )
+      return;
+
     isProcessingRef.current = true;
-
     try {
-      const res = await fetch(
-        `/api/assistant/simple-session/${sessionIdRef.current}/process-response`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            aiTranscript,
-            studentTranscript: lastStudentTranscriptRef.current,
-          }),
-        },
-      );
+      // 1. LECCIÓN 2 (Lógica compleja)
+      if (lesson === 2) {
+        const res = await fetch(
+          `/api/assistant/lesson2-session/${sessionIdRef.current}/advance`,
+          { method: "POST" },
+        );
+        const data = await res.json();
 
-      const data = await res.json();
+        if (data.advanced) {
+          currentPartRef.current = data.currentPart;
+          currentQuestionInPartRef.current = data.currentQuestionInPart;
+          console.log(
+            `[L2] Advanced to Part ${data.currentPart} Q${data.currentQuestionInPart}`,
+          );
 
-      if (data?.advanced) {
-        currentQuestionIndexRef.current = data.currentIndex;
-
-        // 🔑 obtenemos el texto de la próxima pregunta
-        const nextQuestion = getWhatDoesQuestionText(data.currentIndex);
-
-        injectNextQuestion(nextQuestion);
-        turnStateRef.current = "AI_PREPARING_RESPONSE";
-        requestModelResponse();
+          // Actualizar contexto de OpenAI con la nueva parte/pregunta
+          if (data.nextContext && dcRef.current?.readyState === "open") {
+            dcRef.current.send(
+              JSON.stringify({
+                type: "session.update",
+                session: {
+                  instructions: `CONTEXT UPDATE: ${data.nextContext}`,
+                },
+              }),
+            );
+          }
+        }
       }
+      // 2. LECCIÓN 1 (Lógica simple)
+      else {
+        // Llamamos a process-response para validar el avance y obtener la siguiente pregunta
+        const res = await fetch(
+          `/api/assistant/simple-session/${sessionIdRef.current}/process-response`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ aiTranscript }),
+          },
+        );
+        const data = await res.json();
+
+        if (data.advanced) {
+          currentQuestionIndexRef.current = data.currentIndex;
+          console.log(`[L1] Advanced to Question ${data.currentIndex}`);
+
+          // Actualizar contexto de OpenAI con la nueva pregunta OBLIGATORIA
+          if (dcRef.current?.readyState === "open") {
+            dcRef.current.send(
+              JSON.stringify({
+                type: "session.update",
+                session: {
+                  instructions: `STRICT UPDATE: You are now on Question ${data.currentIndex}. Ask ONLY: "${data.currentQuestion}".`,
+                },
+              }),
+            );
+            // Disparamos la nueva pregunta inmediatamente (opcional, o esperamos al usuario)
+            setTimeout(
+              () =>
+                dcRef.current?.send(
+                  JSON.stringify({ type: "response.create" }),
+                ),
+              100,
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Advance error:", e);
     } finally {
       isProcessingRef.current = false;
     }
@@ -527,7 +510,10 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
     connectionState,
     errorMessage,
     messages,
+    currentLesson: lesson,
+    currentStep,
     startConversation,
     stopConversation,
+    requestSessionRecap: () => {},
   };
 }
