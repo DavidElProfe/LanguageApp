@@ -68,6 +68,14 @@ function generateSilentContext(questionIndex: number): string {
   const currentQuestion = getQuestionByIndex(questionIndex);
 
   return `
+  [SYSTEM BLOCK - ABSOLUTE]
+  - YOU MUST NOT SPEAK UNTIL EXPLICITLY REQUESTED BY response.create.
+  - DO NOT greet.
+  - DO NOT ask questions.
+  - DO NOT say anything.
+  - WAIT.
+  [END ABSOLUTE BLOCK]
+  
 [SYSTEM BLOCK]
 - YOU ARE CURRENTLY RESTRICTED TO QUESTION NUMBER: ${questionIndex}
 - EXACT QUESTION TEXT: "${currentQuestion}"
@@ -160,14 +168,8 @@ async function createRealtimeSession(instructions: string) {
   return await openai.beta.realtime.sessions.create({
     model: "gpt-4o-realtime-preview-2024-12-17",
     voice: "alloy",
-    instructions: instructions,
+    instructions,
     modalities: ["text", "audio"],
-    turn_detection: {
-      type: "server_vad",
-      threshold: 0.8,
-      prefix_padding_ms: 500,
-      silence_duration_ms: 3000,
-    },
     input_audio_transcription: {
       model: "whisper-1",
     },
