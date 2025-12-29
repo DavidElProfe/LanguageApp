@@ -146,16 +146,10 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const canAdvanceRef = useRef(true); // Bloqueo lógico (gramática/idioma)
   const expectingResponseRef = useRef(false); // SEMÁFORO (Turn Lock)
   const isProcessingRef = useRef(false); // Bloqueo de red
-  const isAISpeakingRef = useRef(false); // 🚩 NUEVO: Evita doble turno
 
   const requestModelResponse = () => {
-    // Solo disparar si: 1) podemos avanzar, 2) canal abierto, 3) IA no está hablando
-    if (canAdvanceRef.current && dcRef.current?.readyState === "open" && !isAISpeakingRef.current) {
-      console.log("[REQUEST_MODEL_RESPONSE] Triggering response.create");
-      isAISpeakingRef.current = true; // Marcamos que la IA va a hablar
+    if (canAdvanceRef.current && dcRef.current?.readyState === "open") {
       dcRef.current.send(JSON.stringify({ type: "response.create" }));
-    } else {
-      console.log("[REQUEST_MODEL_RESPONSE] BLOCKED - AI already speaking or cannot advance");
     }
   };
 
