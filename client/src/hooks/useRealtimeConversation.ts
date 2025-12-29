@@ -214,39 +214,19 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
       dc.onopen = () => {
         setConnectionState("active");
+        console.log("[DC] DataChannel opened - sending session.update");
 
         // Inicializar sesión con prompt estricto
-        if (lesson === 1) {
-          const question1Text = "Hi, I'm your conversation partner from The Language School. What is your name?";
+        const question1Text = lesson === 1 
+          ? "Hi, I'm your conversation partner from The Language School. What is your name?"
+          : "What is your name?";
 
-          const strictStartInstructions = `
-${SIMPLE_CONVERSATION_PROMPT}
+        const basePrompt = lesson === 1 ? SIMPLE_CONVERSATION_PROMPT : SIMPLE_CONVERSATION_PROMPT_2;
 
-### CRITICAL STARTUP INSTRUCTION ###
-- IGNORE ALL SMALL TALK.
-- YOU ARE STARTING THE SESSION NOW.
-- YOUR CURRENT TARGET IS QUESTION INDEX: 1.
-- YOU MUST IMMEDIATELY ASK: "${question1Text}"
-- DO NOT ASK about "days of the week", "hobbies", or anything else.
-- WAIT FOR THE STUDENT TO RESPOND BEFORE ASKING ANOTHER QUESTION.
-`;
-
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: {
-              instructions: strictStartInstructions,
-              tool_choice: "none",
-              temperature: 0.6
-            }
-          }));
-        } else if (lesson === 2) {
-          const question1Text = "What is your name?";
-
-          const strictStartInstructions = `
-${SIMPLE_CONVERSATION_PROMPT_2}
+        const strictStartInstructions = `
+${basePrompt}
 
 ### CRITICAL STARTUP INSTRUCTION ###
-- YOU ARE IN PART 1: MAKING FRIENDS.
 - IGNORE ALL SMALL TALK.
 - YOU ARE STARTING THE SESSION NOW.
 - ASK ONLY ONE QUESTION AT A TIME.
@@ -256,25 +236,39 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
 - DO NOT COMBINE QUESTIONS.
 `;
 
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: {
-              instructions: strictStartInstructions,
-              tool_choice: "none",
-              temperature: 0.3
+        // ÚNICO session.update con instrucciones + VAD configurado
+        dc.send(JSON.stringify({
+          type: "session.update",
+          session: {
+            instructions: strictStartInstructions,
+            tool_choice: "none",
+            temperature: lesson === 1 ? 0.6 : 0.3,
+            turn_detection: {
+              type: "server_vad",
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 800,
+              create_response: false  // 🚩 CRÍTICO: Desactiva auto-response del servidor
             }
-          }));
-        }
+          }
+        }));
 
         // Iniciamos el semáforo en rojo hasta que el usuario hable
         expectingResponseRef.current = false;
-
-        // 🚩 Disparamos la respuesta para que la IA obedezca la instrucción de arriba YA MISMO
-        requestModelResponse();
+        
+        // NO llamamos response.create aquí - esperamos session.updated
+        console.log("[DC] session.update sent - waiting for session.updated before response.create");
       };
 
       dc.onmessage = (event) => {
         const data = JSON.parse(event.data);
+
+        // --- 0. SESSION UPDATED: Ahora sí podemos disparar la primera respuesta ---
+        if (data.type === "session.updated") {
+          console.log("[DC] session.updated received - NOW triggering response.create");
+          requestModelResponse();
+          return;
+        }
 
         // --- 1. USUARIO HABLA ---
         if (
@@ -373,6 +367,11 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
         // --- 2. IA RESPONDE ---
         if (data.type === "response.audio_transcript.done") {
           const assistantText = data.transcript?.trim();
+          
+          // 🚩 RESET: La IA terminó de hablar, permitir nuevo turno
+          isAISpeakingRef.current = false;
+          console.log("[AI_DONE] Reset isAISpeakingRef = false");
+          
           if (!assistantText) return;
 
           // Solo avanzamos si el semáforo estaba verde
@@ -488,14 +487,8 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
                 },
               }),
             );
-            // Disparamos la nueva pregunta inmediatamente (opcional, o esperamos al usuario)
-            setTimeout(
-              () =>
-                dcRef.current?.send(
-                  JSON.stringify({ type: "response.create" }),
-                ),
-              100,
-            );
+            // Disparamos la nueva pregunta usando el guard
+            setTimeout(() => requestModelResponse(), 100);
           }
         }
       }
