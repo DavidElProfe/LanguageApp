@@ -1,27 +1,12 @@
 import { Router } from "express";
 import OpenAI from "openai";
-import {
-  getBasePrompt,
-  getLessonPrompt,
-  validateLesson,
-  TOTAL_LESSONS,
-  getLesson1MasterPrompt,
-  getLesson1Step,
-  type Lesson1Step,
-} from "./prompts/promptManager";
 import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/simpleConversationPrompt";
 import { SIMPLE_CONVERSATION_PROMPT_2 } from "./prompts/simpleConversationPrompt2";
 import {
-  TOTAL_QUESTIONS,
   getQuestionByIndex,
   findQuestionIndex,
 } from "./prompts/simpleConversationQuestions";
-import {
-  getLesson2Part,
-  getLesson2Question,
-  getLesson2PartQuestionCount,
-  generateLesson2Context,
-} from "./prompts/lesson2Questions";
+import { generateLesson2Context } from "./prompts/lesson2Questions";
 
 const WHAT_DOES_START = 24;
 const WHAT_DOES_END = 31;
@@ -37,13 +22,11 @@ const ENGLISH_ANSWERS = [
   "classroom",
 ];
 
-const isWhatDoesQuestion = (index: number): boolean => {
-  return index >= WHAT_DOES_START && index <= WHAT_DOES_END;
-};
+const isWhatDoesQuestion = (index: number): boolean =>
+  index >= WHAT_DOES_START && index <= WHAT_DOES_END;
 
-const looksLikeEnglishAnswer = (text: string): boolean => {
-  return ENGLISH_ANSWERS.includes(text.trim().toLowerCase());
-};
+const looksLikeEnglishAnswer = (text: string): boolean =>
+  ENGLISH_ANSWERS.includes(text.trim().toLowerCase());
 
 export const assistantRouter = Router();
 
@@ -57,154 +40,117 @@ interface Lesson2SessionState {
   currentPart: number;
   currentQuestionInPart: number;
   lastAdvancedAt: number;
-  lastUserInputAt: number;
   createdAt: number;
 }
 
 const simpleSessionStates = new Map<string, SimpleSessionState>();
 const lesson2SessionStates = new Map<string, Lesson2SessionState>();
 
-function generateSilentContext(questionIndex: number): string {
-  const currentQuestion = getQuestionByIndex(questionIndex);
-
-  return `
-  [SYSTEM BLOCK - ABSOLUTE]
-  - YOU MUST NOT SPEAK UNTIL EXPLICITLY REQUESTED BY response.create.
-  - DO NOT greet.
-  - DO NOT ask questions.
-  - DO NOT say anything.
-  - WAIT.
-  [END ABSOLUTE BLOCK]
-  
-[SYSTEM BLOCK]
-- YOU ARE CURRENTLY RESTRICTED TO QUESTION NUMBER: ${questionIndex}
-- EXACT QUESTION TEXT: "${currentQuestion}"
-- If the student is correct, your ONLY task is to remain SILENT and wait for the system to give you the next question.
-- DO NOT say "Nice to meet you" or "Great".
-- DO NOT invent questions about "free time".
-- If you are correcting, use the algorithm and then ask ONLY: "${currentQuestion}".
-[END BLOCK]
-`;
-}
-
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+/**
+ * =========================
+ * CREATE SIMPLE SESSION
+ * =========================
+ * Backend:
+ *  - creates realtime session (NO instructions)
+ *  - returns token + prompt DATA
+ */
 assistantRouter.get("/simple-session", async (req, res) => {
   try {
-    const lessonParam = req.query.lesson;
-    let lessonNumber = 1;
-    if (lessonParam) {
-      const parsed = parseInt(lessonParam as string, 10);
-      if (!isNaN(parsed) && parsed >= 1 && parsed <= 2) {
-        lessonNumber = parsed;
-      }
-    }
+    const lessonNumber = Number(req.query.lesson) === 2 ? 2 : 1;
 
-    const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    console.log(`[SESSION_START] ID: ${sessionId} | Lesson: ${lessonNumber}`);
+    const sessionId = `simple_${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2, 9)}`;
 
-    let fullInstructions: string;
+    console.log(`[SESSION_START] ${sessionId} | Lesson ${lessonNumber}`);
+
+    // 🔒 Create realtime session WITHOUT instructions
+    const response = await openai.beta.realtime.sessions.create({
+      model: "gpt-4o-realtime-preview-2024-12-17",
+      voice: "alloy",
+      modalities: ["text", "audio"],
+      input_audio_transcription: {
+        model: "whisper-1",
+      },
+      temperature: 0.6,
+    });
 
     if (lessonNumber === 2) {
-      const partNumber = parseInt(req.query.part as string, 10) || 1;
-      const questionInPart = parseInt(req.query.question as string, 10) || 1;
+      const part = Number(req.query.part) || 1;
+      const questionInPart = Number(req.query.question) || 1;
 
-      const lesson2State = getOrCreateLesson2SessionState(
-        sessionId,
-        partNumber,
-        questionInPart,
-      );
-      const lesson2Context = generateLesson2Context(
-        lesson2State.currentPart,
-        lesson2State.currentQuestionInPart,
-      );
-      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
+      lesson2SessionStates.set(sessionId, {
+        currentPart: part,
+        currentQuestionInPart: questionInPart,
+        lastAdvancedAt: 0,
+        createdAt: Date.now(),
+      });
 
-      console.log(
-        `[L2_INIT] Part: ${lesson2State.currentPart} | Q: ${lesson2State.currentQuestionInPart}`,
-      );
-      const response = await createRealtimeSession(fullInstructions);
       res.json({
         token: response.client_secret.value,
-        mode: "simple",
-        lesson: lessonNumber,
         sessionId,
-        part: lesson2State.currentPart,
-        currentQuestionInPart: lesson2State.currentQuestionInPart,
+        lesson: 2,
+        promptPayload: {
+          basePrompt: SIMPLE_CONVERSATION_PROMPT_2,
+          context: generateLesson2Context(part, questionInPart),
+          questionText: null,
+        },
       });
-    } else {
-      const initialIndex =
-        parseInt(req.query.initialQuestionIndex as string, 10) || 1;
-      const sessionState = getOrCreateSessionState(sessionId, initialIndex);
-      const silentContext = generateSilentContext(
-        sessionState.currentQuestionIndex,
-      );
-
-      fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
-
-      console.log(
-        `[L1_INIT] Question Index: ${sessionState.currentQuestionIndex}`,
-      );
-      console.log(`[PROMPT_SENT]:\n${silentContext}`);
-
-      const response = await createRealtimeSession(fullInstructions);
-      res.json({
-        token: response.client_secret.value,
-        mode: "simple",
-        lesson: lessonNumber,
-        sessionId,
-        currentQuestionIndex: sessionState.currentQuestionIndex,
-      });
+      return;
     }
-  } catch (error: any) {
-    console.error(`[SESSION_ERROR]`, error.message);
-    res.status(500).json({ error: error.message });
+
+    // ---------- LESSON 1 ----------
+    const initialIndex = Number(req.query.initialQuestionIndex) || 1;
+
+    simpleSessionStates.set(sessionId, {
+      currentQuestionIndex: initialIndex,
+      lastAdvancedAt: 0,
+      createdAt: Date.now(),
+    });
+
+    res.json({
+      token: response.client_secret.value,
+      sessionId,
+      lesson: 1,
+      promptPayload: {
+        basePrompt: SIMPLE_CONVERSATION_PROMPT,
+        context: `You are on Question ${initialIndex}.`,
+        questionText: getQuestionByIndex(initialIndex),
+      },
+    });
+  } catch (err: any) {
+    console.error("[SESSION_ERROR]", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-async function createRealtimeSession(instructions: string) {
-  return await openai.beta.realtime.sessions.create({
-    model: "gpt-4o-realtime-preview-2024-12-17",
-    voice: "alloy",
-    instructions,
-    modalities: ["text", "audio"],
-    input_audio_transcription: {
-      model: "whisper-1",
-    },
-    temperature: 0.6,
-  });
-}
-
+/**
+ * =========================
+ * PROCESS RESPONSE (L1)
+ * =========================
+ */
 assistantRouter.post(
   "/simple-session/:sessionId/process-response",
   async (req, res) => {
     const { sessionId } = req.params;
     const { aiTranscript, studentTranscript } = req.body;
-    const sessionState = simpleSessionStates.get(sessionId);
 
-    if (!sessionState) {
-      console.warn(`[PROCESS_ERROR] Session ${sessionId} not found`);
+    const state = simpleSessionStates.get(sessionId);
+    if (!state) {
       return res.status(404).json({ error: "Session not found" });
     }
 
-    const currentIndex = sessionState.currentQuestionIndex;
-    console.log(
-      `[PROCESS_START] Session: ${sessionId} | Index: ${currentIndex}`,
-    );
-    console.log(
-      `[TRANSCRIPTS] Student: "${studentTranscript}" | AI: "${aiTranscript}"`,
-    );
+    const currentIndex = state.currentQuestionIndex;
 
     if (
       typeof studentTranscript === "string" &&
       isWhatDoesQuestion(currentIndex) &&
       looksLikeEnglishAnswer(studentTranscript)
     ) {
-      console.log(
-        `[GUARDRAIL] Triggered: English answer on Spanish-required question`,
-      );
       return res.json({
         advanced: false,
         guardrailTriggered: true,
@@ -213,59 +159,23 @@ assistantRouter.post(
     }
 
     const detectedIndex = findQuestionIndex(aiTranscript);
-    console.log(
-      `[INDEX_DETECTION] Detected: ${detectedIndex} | Target: ${currentIndex + 1}`,
-    );
-
     const now = Date.now();
+
     let advanced = false;
 
     if (
       detectedIndex === currentIndex + 1 &&
-      now - sessionState.lastAdvancedAt > 2000
+      now - state.lastAdvancedAt > 2000
     ) {
-      sessionState.currentQuestionIndex = detectedIndex;
-      sessionState.lastAdvancedAt = now;
+      state.currentQuestionIndex = detectedIndex;
+      state.lastAdvancedAt = now;
       advanced = true;
-      console.log(`[SUCCESS] Advanced to index ${detectedIndex}`);
-    } else {
-      console.log(
-        `[STAY] Remaining at index ${currentIndex}. Reason: ${detectedIndex !== currentIndex + 1 ? "Index mismatch" : "Cooldown active"}`,
-      );
     }
 
     res.json({
       advanced,
-      currentIndex: sessionState.currentQuestionIndex,
-      currentQuestion: getQuestionByIndex(sessionState.currentQuestionIndex),
+      currentIndex: state.currentQuestionIndex,
+      currentQuestion: getQuestionByIndex(state.currentQuestionIndex),
     });
   },
 );
-
-function getOrCreateSessionState(id: string, idx: number): SimpleSessionState {
-  if (!simpleSessionStates.has(id)) {
-    simpleSessionStates.set(id, {
-      currentQuestionIndex: idx,
-      lastAdvancedAt: 0,
-      createdAt: Date.now(),
-    });
-  }
-  return simpleSessionStates.get(id)!;
-}
-
-function getOrCreateLesson2SessionState(
-  id: string,
-  part: number,
-  q: number,
-): Lesson2SessionState {
-  if (!lesson2SessionStates.has(id)) {
-    lesson2SessionStates.set(id, {
-      currentPart: part,
-      currentQuestionInPart: q,
-      lastAdvancedAt: 0,
-      lastUserInputAt: 0,
-      createdAt: Date.now(),
-    });
-  }
-  return lesson2SessionStates.get(id)!;
-}
