@@ -387,6 +387,11 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
         // --- 2. IA RESPONDE ---
         if (data.type === "response.audio_transcript.done") {
           const assistantText = data.transcript?.trim();
+          
+          // 🚩 RESET: La IA terminó de hablar, permitir nuevo turno
+          isAISpeakingRef.current = false;
+          console.log("[AI_DONE] Reset isAISpeakingRef = false");
+          
           if (!assistantText) return;
 
           // Solo avanzamos si el semáforo estaba verde
