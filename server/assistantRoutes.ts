@@ -97,9 +97,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
     const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     console.log(`[SESSION_START] ID: ${sessionId} | Lesson: ${lessonNumber}`);
 
-    // Backend SOLO crea sesión y devuelve token
-    // Las instrucciones se envían desde el FRONTEND vía session.update
-    const response = await createRealtimeSession();
+    let fullInstructions: string;
 
     if (lessonNumber === 2) {
       const partNumber = parseInt(req.query.part as string, 10) || 1;
@@ -110,10 +108,16 @@ assistantRouter.get("/simple-session", async (req, res) => {
         partNumber,
         questionInPart,
       );
+      const lesson2Context = generateLesson2Context(
+        lesson2State.currentPart,
+        lesson2State.currentQuestionInPart,
+      );
+      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
 
       console.log(
         `[L2_INIT] Part: ${lesson2State.currentPart} | Q: ${lesson2State.currentQuestionInPart}`,
       );
+      const response = await createRealtimeSession(fullInstructions);
       res.json({
         token: response.client_secret.value,
         mode: "simple",
@@ -126,11 +130,18 @@ assistantRouter.get("/simple-session", async (req, res) => {
       const initialIndex =
         parseInt(req.query.initialQuestionIndex as string, 10) || 1;
       const sessionState = getOrCreateSessionState(sessionId, initialIndex);
+      const silentContext = generateSilentContext(
+        sessionState.currentQuestionIndex,
+      );
+
+      fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
 
       console.log(
         `[L1_INIT] Question Index: ${sessionState.currentQuestionIndex}`,
       );
+      console.log(`[PROMPT_SENT]:\n${silentContext}`);
 
+      const response = await createRealtimeSession(fullInstructions);
       res.json({
         token: response.client_secret.value,
         mode: "simple",
@@ -145,13 +156,18 @@ assistantRouter.get("/simple-session", async (req, res) => {
   }
 });
 
-async function createRealtimeSession() {
-  // MINIMAL: Solo crea sesión con audio + transcripción
-  // Las instrucciones y turn_detection se configuran en el FRONTEND vía session.update
+async function createRealtimeSession(instructions: string) {
   return await openai.beta.realtime.sessions.create({
     model: "gpt-4o-realtime-preview-2024-12-17",
     voice: "alloy",
+    instructions: instructions,
     modalities: ["text", "audio"],
+    turn_detection: {
+      type: "server_vad",
+      threshold: 0.8,
+      prefix_padding_ms: 500,
+      silence_duration_ms: 3000,
+    },
     input_audio_transcription: {
       model: "whisper-1",
     },
