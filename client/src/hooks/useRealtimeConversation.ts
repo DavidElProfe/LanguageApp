@@ -149,6 +149,7 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
   const requestModelResponse = () => {
     if (canAdvanceRef.current && dcRef.current?.readyState === "open") {
+      console.log("[RESPONSE.CREATE] requestModelResponse() - Normal flow");
       dcRef.current.send(JSON.stringify({ type: "response.create" }));
     }
   };
@@ -307,6 +308,7 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
           if (!grammar.isValid) {
             canAdvanceRef.current = false;
             expectingResponseRef.current = false; // Bloqueamos semáforo (va a corregir)
+            console.log("[RESPONSE.CREATE] Grammar correction - Error:", text, "Feedback:", grammar.feedback);
             dcRef.current?.send(
               JSON.stringify({
                 type: "response.create",
@@ -323,6 +325,7 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             if (looksLikeEnglish(text)) {
               canAdvanceRef.current = false;
               expectingResponseRef.current = false;
+              console.log("[RESPONSE.CREATE] Language error - Answered in English:", text);
               dcRef.current?.send(
                 JSON.stringify({
                   type: "response.create",
@@ -336,6 +339,7 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             if (!looksLikeValidSpanishMeaning(text, qIndex)) {
               canAdvanceRef.current = false;
               expectingResponseRef.current = false;
+              console.log("[RESPONSE.CREATE] Meaning error - Incorrect Spanish meaning:", text);
               dcRef.current?.send(
                 JSON.stringify({
                   type: "response.create",
@@ -484,10 +488,12 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             );
             // Disparamos la nueva pregunta inmediatamente (opcional, o esperamos al usuario)
             setTimeout(
-              () =>
+              () => {
+                console.log("[RESPONSE.CREATE] L1 Advanced - Triggering next question:", data.currentIndex);
                 dcRef.current?.send(
                   JSON.stringify({ type: "response.create" }),
-                ),
+                );
+              },
               100,
             );
           }
