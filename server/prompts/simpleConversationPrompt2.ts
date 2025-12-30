@@ -462,3 +462,25 @@ If you are unsure what to do, DO NOTHING and wait.
 Never assume the next step.
 The user will manually select which PART to practice.
 `;
+
+export const LESSON_2_MVP_QUESTIONS = [
+  // --- Making Friends (core) ---
+  "What is your name?",
+  "Where are you from?",
+  "Where do you live?",
+  "Where do you work?",
+  "What do you like?",
+
+  // Likes (general, no overload)
+  "Do you like music?",
+  "Do you like movies?",
+  "Do you like sports?",
+  "Do you like the beach?",
+
+  // --- Making Small Talk ---
+  "Do you like pizza?",
+  "Do you like the summer?",
+  "What is your favorite food?",
+  "What is your favorite place?",
+  "What is your favorite sport?",
+];

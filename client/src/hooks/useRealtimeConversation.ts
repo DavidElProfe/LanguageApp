@@ -148,6 +148,13 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const isProcessingRef = useRef(false); // Bloqueo de red
 
   const requestModelResponse = () => {
+    console.log("[AI CREATE] requestModelResponse()", {
+      canAdvance: canAdvanceRef.current,
+      expectingResponse: expectingResponseRef.current,
+      dcState: dcRef.current?.readyState,
+      timestamp: Date.now(),
+    });
+
     if (canAdvanceRef.current && dcRef.current?.readyState === "open") {
       dcRef.current.send(JSON.stringify({ type: "response.create" }));
     }
@@ -211,7 +218,8 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
         // Inicializar sesión con prompt estricto
         if (lesson === 1) {
-          const question1Text = "Hi, I'm your conversation partner from The Language School. What is your name?";
+          const question1Text =
+            "Hi, I'm your conversation partner from The Language School. What is your name?";
 
           const strictStartInstructions = `
 ${SIMPLE_CONVERSATION_PROMPT}
@@ -225,14 +233,16 @@ ${SIMPLE_CONVERSATION_PROMPT}
 - WAIT FOR THE STUDENT TO RESPOND BEFORE ASKING ANOTHER QUESTION.
 `;
 
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: {
-              instructions: strictStartInstructions,
-              tool_choice: "none",
-              temperature: 0.6
-            }
-          }));
+          dc.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions: strictStartInstructions,
+                tool_choice: "none",
+                temperature: 0.6,
+              },
+            }),
+          );
         } else if (lesson === 2) {
           const question1Text = "What is your name?";
 
@@ -250,18 +260,29 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
 - DO NOT COMBINE QUESTIONS.
 `;
 
-          dc.send(JSON.stringify({
-            type: "session.update",
-            session: {
-              instructions: strictStartInstructions,
-              tool_choice: "none",
-              temperature: 0.3
-            }
-          }));
+          dc.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions: strictStartInstructions,
+                tool_choice: "none",
+                temperature: 0.3,
+              },
+            }),
+          );
         }
 
         // Iniciamos el semáforo en rojo hasta que el usuario hable
         expectingResponseRef.current = false;
+
+        console.log(
+          "[DC OPEN] DataChannel opened. Triggering initial response.create",
+          {
+            lesson,
+            part,
+            timestamp: Date.now(),
+          },
+        );
 
         // 🚩 Disparamos la respuesta para que la IA obedezca la instrucción de arriba YA MISMO
         requestModelResponse();
@@ -276,18 +297,25 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
         ) {
           const text = data.transcript?.trim();
 
-          const isGarbage = !text || text.length < 3 || /^(swooshy|electrolytes|uh|um)$/i.test(text);
+          const isGarbage =
+            !text ||
+            text.length < 3 ||
+            /^(swooshy|electrolytes|uh|um)$/i.test(text);
 
           if (isGarbage) {
-            dcRef.current?.send(JSON.stringify({ 
-              type: "response.cancel" 
-            }));
+            dcRef.current?.send(
+              JSON.stringify({
+                type: "response.cancel",
+              }),
+            );
 
             if (data.item_id) {
-               dcRef.current?.send(JSON.stringify({ 
-                 type: "conversation.item.delete",
-                 item_id: data.item_id
-               }));
+              dcRef.current?.send(
+                JSON.stringify({
+                  type: "conversation.item.delete",
+                  item_id: data.item_id,
+                }),
+              );
             }
             return;
           }
@@ -299,6 +327,14 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
           }
 
           const qIndex = currentQuestionIndexRef.current;
+
+          console.log("[USER INPUT]", {
+            transcript: text,
+            qIndex,
+            canAdvance: canAdvanceRef.current,
+            expectingResponse: expectingResponseRef.current,
+            timestamp: Date.now(),
+          });
 
           // Validar gramática
           const grammar = validateStudentGrammar(text);
@@ -359,6 +395,15 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
               timestamp: Date.now(),
             },
           ]);
+
+          console.log(
+            "[VALID INPUT] Triggering response.create after user input",
+            {
+              canAdvance: canAdvanceRef.current,
+              expectingResponse: expectingResponseRef.current,
+            },
+          );
+
           requestModelResponse();
         }
 
@@ -421,67 +466,40 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
 
     isProcessingRef.current = true;
     try {
-      // 1. LECCIÓN 2 (Lógica compleja)
+      // 1. LECCIÓN 2 — Advance deshabilitado en Voice MVP
       if (lesson === 2) {
-        const res = await fetch(
-          `/api/assistant/lesson2-session/${sessionIdRef.current}/advance`,
-          { method: "POST" },
-        );
-        const data = await res.json();
-
-        if (data.advanced) {
-          currentPartRef.current = data.currentPart;
-          currentQuestionInPartRef.current = data.currentQuestionInPart;
-
-          // Actualizar contexto de OpenAI con la nueva parte/pregunta
-          if (data.nextContext && dcRef.current?.readyState === "open") {
-            dcRef.current.send(
-              JSON.stringify({
-                type: "session.update",
-                session: {
-                  instructions: `CONTEXT UPDATE: ${data.nextContext}`,
-                },
-              }),
-            );
-          }
-        }
+        // No advance logic for Lesson 2 in Phase 1
+        return;
       }
+
       // 2. LECCIÓN 1 (Lógica simple)
-      else {
-        // Llamamos a process-response para validar el avance y obtener la siguiente pregunta
-        const res = await fetch(
-          `/api/assistant/simple-session/${sessionIdRef.current}/process-response`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ aiTranscript }),
-          },
-        );
-        const data = await res.json();
+      const res = await fetch(
+        `/api/assistant/simple-session/${sessionIdRef.current}/process-response`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ aiTranscript }),
+        },
+      );
 
-        if (data.advanced) {
-          currentQuestionIndexRef.current = data.currentIndex;
+      const data = await res.json();
 
-          // Actualizar contexto de OpenAI con la nueva pregunta OBLIGATORIA
-          if (dcRef.current?.readyState === "open") {
-            dcRef.current.send(
-              JSON.stringify({
-                type: "session.update",
-                session: {
-                  instructions: `STRICT UPDATE: You are now on Question ${data.currentIndex}. Ask ONLY: "${data.currentQuestion}".`,
-                },
-              }),
-            );
-            // Disparamos la nueva pregunta inmediatamente (opcional, o esperamos al usuario)
-            setTimeout(
-              () => {
-                dcRef.current?.send(
-                  JSON.stringify({ type: "response.create" }),
-                );
+      if (data.advanced) {
+        currentQuestionIndexRef.current = data.currentIndex;
+
+        if (dcRef.current?.readyState === "open") {
+          dcRef.current.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions: `STRICT UPDATE: You are now on Question ${data.currentIndex}. Ask ONLY: "${data.currentQuestion}".`,
               },
-              100,
-            );
-          }
+            }),
+          );
+
+          setTimeout(() => {
+            dcRef.current?.send(JSON.stringify({ type: "response.create" }));
+          }, 100);
         }
       }
     } catch (e) {
