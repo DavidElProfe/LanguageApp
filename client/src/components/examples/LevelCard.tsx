@@ -9,7 +9,7 @@ export default function LevelCardExample() {
         progress={0}
         isCompleted={false}
         track="english"
-        onClick={() => console.log('Level 1 clicked')}
+        onClick={() => {}}
       />
       <LevelCard
         number={2}
@@ -17,7 +17,7 @@ export default function LevelCardExample() {
         progress={65}
         isCompleted={false}
         track="english"
-        onClick={() => console.log('Level 2 clicked')}
+        onClick={() => {}}
       />
       <LevelCard
         number={3}
@@ -25,7 +25,7 @@ export default function LevelCardExample() {
         progress={100}
         isCompleted={true}
         track="english"
-        onClick={() => console.log('Level 3 clicked')}
+        onClick={() => {}}
       />
     </div>
   );

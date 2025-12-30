@@ -7,13 +7,13 @@ export default function EmbedFrameExample() {
         type="quizlet"
         embedUrl="https://quizlet.com"
         title="Vocabulary Set 1"
-        onInteraction={() => console.log('Quizlet opened')}
+        onInteraction={() => {}}
       />
       <EmbedFrame
         type="youtube"
         embedUrl="https://youtube.com"
         title="Lesson Video 1"
-        onInteraction={() => console.log('YouTube opened')}
+        onInteraction={() => {}}
       />
     </div>
   );

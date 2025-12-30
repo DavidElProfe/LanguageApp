@@ -156,7 +156,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (data.user) {
         const existingProfile = await storage.getProfile(data.user.id);
         if (!existingProfile) {
-          console.log('Creating missing profile for user:', data.user.id);
           await storage.createProfile({
             id: data.user.id,
             displayName: email.split('@')[0],
@@ -215,7 +214,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!existingProfile) {
         // Create profile if it doesn't exist
-        console.log('Creating profile for user:', targetUserId);
         const profile = await storage.createProfile({
           id: targetUserId,
           displayName: name || userEmail?.split('@')[0] || 'User',
@@ -734,8 +732,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin seed endpoint - PUBLIC for easy database seeding
   app.post("/api/admin/seed", async (req, res) => {
     try {
-      console.log("🌱 Starting database seed...");
-      
       // Check if courses already exist
       const existingCourses = await storage.getAllCourses();
       if (existingCourses.length > 0) {

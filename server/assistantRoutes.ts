@@ -95,7 +95,6 @@ assistantRouter.get("/simple-session", async (req, res) => {
     }
 
     const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    console.log(`[SESSION_START] ID: ${sessionId} | Lesson: ${lessonNumber}`);
 
     let fullInstructions: string;
 
@@ -114,9 +113,6 @@ assistantRouter.get("/simple-session", async (req, res) => {
       );
       fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
 
-      console.log(
-        `[L2_INIT] Part: ${lesson2State.currentPart} | Q: ${lesson2State.currentQuestionInPart}`,
-      );
       const response = await createRealtimeSession(fullInstructions);
       res.json({
         token: response.client_secret.value,
@@ -135,11 +131,6 @@ assistantRouter.get("/simple-session", async (req, res) => {
       );
 
       fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
-
-      console.log(
-        `[L1_INIT] Question Index: ${sessionState.currentQuestionIndex}`,
-      );
-      console.log(`[PROMPT_SENT]:\n${silentContext}`);
 
       const response = await createRealtimeSession(fullInstructions);
       res.json({
@@ -188,21 +179,12 @@ assistantRouter.post(
     }
 
     const currentIndex = sessionState.currentQuestionIndex;
-    console.log(
-      `[PROCESS_START] Session: ${sessionId} | Index: ${currentIndex}`,
-    );
-    console.log(
-      `[TRANSCRIPTS] Student: "${studentTranscript}" | AI: "${aiTranscript}"`,
-    );
 
     if (
       typeof studentTranscript === "string" &&
       isWhatDoesQuestion(currentIndex) &&
       looksLikeEnglishAnswer(studentTranscript)
     ) {
-      console.log(
-        `[GUARDRAIL] Triggered: English answer on Spanish-required question`,
-      );
       return res.json({
         advanced: false,
         guardrailTriggered: true,
@@ -211,9 +193,6 @@ assistantRouter.post(
     }
 
     const detectedIndex = findQuestionIndex(aiTranscript);
-    console.log(
-      `[INDEX_DETECTION] Detected: ${detectedIndex} | Target: ${currentIndex + 1}`,
-    );
 
     const now = Date.now();
     let advanced = false;
@@ -225,11 +204,6 @@ assistantRouter.post(
       sessionState.currentQuestionIndex = detectedIndex;
       sessionState.lastAdvancedAt = now;
       advanced = true;
-      console.log(`[SUCCESS] Advanced to index ${detectedIndex}`);
-    } else {
-      console.log(
-        `[STAY] Remaining at index ${currentIndex}. Reason: ${detectedIndex !== currentIndex + 1 ? "Index mismatch" : "Cooldown active"}`,
-      );
     }
 
     res.json({

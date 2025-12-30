@@ -19,7 +19,6 @@
             
             // If this is a password recovery flow, save it IMMEDIATELY
             if (recoveryType === 'recovery' && accessToken) {
-              console.log('[Password Reset] Recovery flow detected - saving to localStorage');
               localStorage.setItem('password_reset_flow', 'true');
               localStorage.setItem('password_reset_detected_at', Date.now().toString());
               

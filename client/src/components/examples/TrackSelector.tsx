@@ -8,14 +8,14 @@ export default function TrackSelectorExample() {
         description="Master English from the basics"
         levelCount={17}
         flag="🇺🇸"
-        onClick={() => console.log('English track selected')}
+        onClick={() => {}}
       />
       <TrackSelector
         title="Spanish Foundations"
         description="Learn Spanish fundamentals"
         levelCount={12}
         flag="🇪🇸"
-        onClick={() => console.log('Spanish track selected')}
+        onClick={() => {}}
       />
     </div>
   );

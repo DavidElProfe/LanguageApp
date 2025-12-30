@@ -72,7 +72,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 // Handle password recovery flow
                 if (event === 'PASSWORD_RECOVERY') {
                   // Session will be available for password update
-                  console.log('Password recovery session established');
                 }
               }
             }
@@ -82,9 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error: any) {
         // Ignore refresh_token_not_found errors during password recovery flow
         // These are expected when Supabase is processing a recovery token
-        if (error?.message?.includes('refresh_token_not_found')) {
-          console.log('Recovery flow in progress...');
-        } else {
+        if (!error?.message?.includes('refresh_token_not_found')) {
           console.error('Auth check error:', error);
         }
         if (mounted) {
@@ -166,7 +163,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await client.auth.signOut();
     } catch (error) {
       // Ignore session errors during signout - still clear local state
-      console.log('SignOut: clearing local session');
     } finally {
       // Always clear local state
       setSession(null);

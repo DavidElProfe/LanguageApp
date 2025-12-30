@@ -11,9 +11,7 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPA
 
 // Auto-detect and fix swapped URL and anon key
 if (supabaseUrl.startsWith('eyJ') && supabaseAnonKey.startsWith('http')) {
-  console.log('⚠️  Detected swapped Supabase URL and Anon Key - auto-fixing...');
   [supabaseUrl, supabaseAnonKey] = [supabaseAnonKey, supabaseUrl];
-  console.log('✅ Fixed: URL and Anon Key are now in correct order');
 }
 
 // Validate Supabase configuration
@@ -40,8 +38,6 @@ if (!supabaseAnonKey || !supabaseServiceKey) {
     process.exit(1);
   }
 }
-
-console.log('✅ Supabase configured:', supabaseUrl);
 
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: {

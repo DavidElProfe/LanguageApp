@@ -42,6 +42,7 @@ export default function SimpleMode() {
                     <p className="text-sm text-muted-foreground">Conversación guiada con 52 preguntas</p>
                   </div>
                 </div>
+                
                 <Button
                   variant="ghost"
                   size="sm"
@@ -49,6 +50,8 @@ export default function SimpleMode() {
                   className="text-muted-foreground"
                   data-testid="button-toggle-debug"
                 >
+
+                  
                   {showDebugChat ? (
                     <>
                       <EyeOff className="h-4 w-4 mr-1" />

@@ -149,7 +149,6 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
   const requestModelResponse = () => {
     if (canAdvanceRef.current && dcRef.current?.readyState === "open") {
-      console.log("[RESPONSE.CREATE] requestModelResponse() - Normal flow");
       dcRef.current.send(JSON.stringify({ type: "response.create" }));
     }
   };
@@ -280,8 +279,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
           const isGarbage = !text || text.length < 3 || /^(swooshy|electrolytes|uh|um)$/i.test(text);
 
           if (isGarbage) {
-            console.log(`[GARBAGE DETECTED] "${text}" - Cancelling AI response.`);
-
             dcRef.current?.send(JSON.stringify({ 
               type: "response.cancel" 
             }));
@@ -308,7 +305,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
           if (!grammar.isValid) {
             canAdvanceRef.current = false;
             expectingResponseRef.current = false; // Bloqueamos semáforo (va a corregir)
-            console.log("[RESPONSE.CREATE] Grammar correction - Error:", text, "Feedback:", grammar.feedback);
             dcRef.current?.send(
               JSON.stringify({
                 type: "response.create",
@@ -325,7 +321,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             if (looksLikeEnglish(text)) {
               canAdvanceRef.current = false;
               expectingResponseRef.current = false;
-              console.log("[RESPONSE.CREATE] Language error - Answered in English:", text);
               dcRef.current?.send(
                 JSON.stringify({
                   type: "response.create",
@@ -339,7 +334,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             if (!looksLikeValidSpanishMeaning(text, qIndex)) {
               canAdvanceRef.current = false;
               expectingResponseRef.current = false;
-              console.log("[RESPONSE.CREATE] Meaning error - Incorrect Spanish meaning:", text);
               dcRef.current?.send(
                 JSON.stringify({
                   type: "response.create",
@@ -377,10 +371,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
           if (expectingResponseRef.current) {
             handleAdvanceLogic(assistantText);
             expectingResponseRef.current = false; // Volvemos a rojo
-          } else {
-            console.log(
-              "🔒 [LOCKED] AI spoke but advance logic skipped (Semaphore Red)",
-            );
           }
 
           setMessages((m) => [
@@ -442,9 +432,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
         if (data.advanced) {
           currentPartRef.current = data.currentPart;
           currentQuestionInPartRef.current = data.currentQuestionInPart;
-          console.log(
-            `[L2] Advanced to Part ${data.currentPart} Q${data.currentQuestionInPart}`,
-          );
 
           // Actualizar contexto de OpenAI con la nueva parte/pregunta
           if (data.nextContext && dcRef.current?.readyState === "open") {
@@ -474,7 +461,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
 
         if (data.advanced) {
           currentQuestionIndexRef.current = data.currentIndex;
-          console.log(`[L1] Advanced to Question ${data.currentIndex}`);
 
           // Actualizar contexto de OpenAI con la nueva pregunta OBLIGATORIA
           if (dcRef.current?.readyState === "open") {
@@ -489,7 +475,6 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             // Disparamos la nueva pregunta inmediatamente (opcional, o esperamos al usuario)
             setTimeout(
               () => {
-                console.log("[RESPONSE.CREATE] L1 Advanced - Triggering next question:", data.currentIndex);
                 dcRef.current?.send(
                   JSON.stringify({ type: "response.create" }),
                 );

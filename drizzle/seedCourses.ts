@@ -2,8 +2,6 @@ import { db } from "../server/storage";
 import * as schema from "../shared/schema";
 
 export async function seedCourses() {
-  console.log("🌱 Seeding: Fundamentos de Inglés 1");
-
   if (!db) {
     throw new Error("Database not available");
   }
@@ -19,8 +17,6 @@ export async function seedCourses() {
         "Beginner conversational English course focused on real-life communication with an AI conversation partner.",
     })
     .returning();
-
-  console.log(`✅ Course created: ${course.title}`);
 
   // Helper: create Lesson → Topic → AI Chat Activity
   async function createLesson(opts: {
@@ -57,8 +53,6 @@ export async function seedCourses() {
         promptSet,
       },
     });
-
-    console.log(`📘 ${lesson.title} → 🤖 AI Chat created`);
   }
 
   // =========================
@@ -166,8 +160,6 @@ export async function seedCourses() {
       "End with positive feedback.",
     ],
   });
-
-  console.log("🎉 Fundamentos de Inglés 1 seeded successfully");
 }
 
 // Allow direct execution

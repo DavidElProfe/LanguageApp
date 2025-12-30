@@ -92,15 +92,5 @@ export function estimateSessionCost(
  * Log session cost to console in a structured format
  */
 export function logSessionCost(estimate: SessionCostEstimate): void {
-  const totalTokens = estimate.inputTokens + estimate.outputTokens + estimate.textTokens;
-  
-  console.log("\n[AI COST SUMMARY]");
-  console.log(`sessionId=${estimate.sessionId}`);
-  console.log(`model=${estimate.model}`);
-  console.log(`durationMinutes=${estimate.durationMinutes}`);
-  console.log(`audioTokensEstimated=${estimate.inputTokens + estimate.outputTokens}`);
-  console.log(`textTokensEstimated=${estimate.textTokens}`);
-  console.log(`totalTokensEstimated=${totalTokens}`);
-  console.log(`estimatedCostUSD=${estimate.estimatedCostUSD}`);
-  console.log("");
+  // Cost logging removed
 }

@@ -19,7 +19,6 @@ export default function Settings() {
       title: 'Ajustes guardados',
       description: 'Tus preferencias han sido actualizadas',
     });
-    console.log('Settings saved:', { displayName });
   };
 
   return (

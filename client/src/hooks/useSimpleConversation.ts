@@ -319,9 +319,6 @@ export function useSimpleConversation(): UseSimpleConversationReturn {
                 expectingResponseRef.current = false; // 🔒 Volvemos a poner en ROJO hasta que el usuario hable de nuevo
               } else {
                 // Si el semáforo estaba en rojo, solo guardamos el mensaje pero NO AVANZAMOS
-                console.log(
-                  "[LOCK] AI spoke but user hasn't answered validly yet. Ignoring advance.",
-                );
                 setMessages((prev) => [
                   ...prev,
                   {

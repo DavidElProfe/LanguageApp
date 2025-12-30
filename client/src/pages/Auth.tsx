@@ -45,8 +45,6 @@ export default function Auth() {
   useEffect(() => {
     const checkPasswordRecovery = () => {
       try {
-        console.log('[Password Reset] Checking for recovery flow...');
-        
         // Check if this is a password recovery flow
         // Supabase recovery links have #access_token=...&type=recovery in the URL
         const hashParams = new URLSearchParams(window.location.hash.substring(1));
@@ -58,19 +56,9 @@ export default function Auth() {
         const wasRecoveryFlow = localStorage.getItem('password_reset_flow') === 'true';
         const detectedAt = localStorage.getItem('password_reset_detected_at');
         
-        console.log('[Password Reset] Detection state:', {
-          hasRecoveryType,
-          hasAccessToken,
-          wasRecoveryFlow,
-          detectedAt,
-          hasSession: !!session,
-          currentHash: window.location.hash.substring(0, 50) + '...'
-        });
-        
         // If we detect recovery type in hash, save it to localStorage
         // This persists even after Supabase processes the token and clears the hash
         if (hasRecoveryType && hasAccessToken) {
-          console.log('[Password Reset] ✓ Recovery flow detected in hash - showing password update form');
           localStorage.setItem('password_reset_flow', 'true');
           localStorage.setItem('password_reset_detected_at', Date.now().toString());
           setIsPasswordReset(true);
@@ -86,22 +74,17 @@ export default function Auth() {
           const isRecent = detectedAt && (Date.now() - parseInt(detectedAt)) < 30000;
           
           if (session) {
-            console.log('[Password Reset] ✓ Have session + recovery flag - showing password update form');
             setIsPasswordReset(true);
             return;
           } else if (isRecent) {
-            console.log('[Password Reset] ✓ Recent recovery flag detected - showing password update form');
             setIsPasswordReset(true);
             return;
           } else {
-            console.log('[Password Reset] ⚠ Stale recovery flag detected - clearing all flags');
             localStorage.removeItem('password_reset_flow');
             localStorage.removeItem('password_reset_detected_at');
             localStorage.removeItem('password_reset_hash');
           }
         }
-        
-        console.log('[Password Reset] No recovery flow detected');
       } catch (error) {
         console.error('[Password Reset] Error in detection:', error);
       }
@@ -173,9 +156,7 @@ export default function Auth() {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[Password Reset] Reset password requested');
     if (!resetEmail) {
-      console.log('[Password Reset] ✗ No email provided');
       toast({ 
         title: t('common.error'), 
         description: t('auth.email'), 
@@ -185,9 +166,7 @@ export default function Auth() {
     }
     setIsResetLoading(true);
     try {
-      console.log('[Password Reset] Sending reset email');
       await resetPassword(resetEmail);
-      console.log('[Password Reset] ✓ Reset email sent successfully');
       toast({ 
         title: t('auth.resetEmailSent'), 
         description: t('auth.resetEmailSentDescription'),
@@ -214,10 +193,8 @@ export default function Auth() {
     }
     setIsLoading(true);
     try {
-      console.log('[Password Reset] Updating password...');
       await updatePassword(newPasswordData.password);
       // Clear the password reset flow flags from localStorage
-      console.log('[Password Reset] ✓ Password updated successfully - clearing flags');
       localStorage.removeItem('password_reset_flow');
       localStorage.removeItem('password_reset_detected_at');
       localStorage.removeItem('password_reset_hash');
