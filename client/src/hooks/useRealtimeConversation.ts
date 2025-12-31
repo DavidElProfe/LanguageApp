@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef } from "react";
 import { SIMPLE_CONVERSATION_PROMPT } from "../../../server/prompts/simpleConversationPrompt";
-import { SIMPLE_CONVERSATION_PROMPT_2 } from "../../../server/prompts/simpleConversationPrompt2";
+
+import { LESSON_2_VOICE_MVP_PROMPT } from "../../../server/prompts/lesson_2_voice_mvp_prompt";
+import { LESSON_2_VOICE_MVP_QUESTIONS } from "../../../server/prompts/lesson2VoiceMvpQuestions";
 
 /* =====================================================
     TYPES & CONSTANTS
@@ -13,112 +15,6 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   text: string;
   timestamp: number;
-}
-
-const WHAT_DOES_START = 25;
-const WHAT_DOES_END = 32;
-
-const ENGLISH_WORDS = [
-  "computer",
-  "office",
-  "paper",
-  "employee",
-  "director",
-  "student",
-  "conference room",
-  "classroom",
-];
-
-const WHAT_DOES_ANSWERS: Record<number, string[]> = {
-  25: ["computadora"],
-  26: ["oficina"],
-  27: ["papel"],
-  28: ["empleado"],
-  29: ["director"],
-  30: ["estudiante"],
-  31: ["sala de conferencias"],
-  32: ["aula", "salón de clases"],
-};
-
-/* =====================================================
-    VALIDATORS
-===================================================== */
-
-function isWhatDoesQuestion(index: number): boolean {
-  return index >= WHAT_DOES_START && index <= WHAT_DOES_END;
-}
-
-function getWhatDoesQuestionText(qIndex: number): string {
-  const map: Record<number, string> = {
-    25: "What does computer mean in Spanish?",
-    26: "What does office mean?",
-    27: "What does paper mean?",
-    28: "What does employee mean?",
-    29: "What does director mean?",
-    30: "What does student mean?",
-    31: "What does conference room mean?",
-    32: "What does classroom mean?",
-  };
-  return map[qIndex] || "Question";
-}
-
-function normalize(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[.,!?¿¡"]/g, "")
-    .trim();
-}
-
-function looksLikeEnglish(text: string): boolean {
-  return ENGLISH_WORDS.includes(normalize(text));
-}
-
-function looksLikeValidSpanishMeaning(text: string, qIndex: number): boolean {
-  const expected = WHAT_DOES_ANSWERS[qIndex];
-  if (!expected) return false;
-  const t = normalize(text);
-  return expected.some((w) => t.includes(normalize(w)));
-}
-
-function validateStudentGrammar(text: string): {
-  isValid: boolean;
-  feedback?: string;
-} {
-  const t = text.toLowerCase();
-
-  // 1. Contracciones
-  const forbidden = ["don't", "can't", "won't", "it's", "i'm"];
-  const found = forbidden.find((c) => t.includes(c));
-  if (found) {
-    return {
-      isValid: false,
-      feedback:
-        "No uses contracciones. Por favor, di la forma completa (ejemplo: 'do not' en lugar de 'don't').",
-    };
-  }
-
-  // 2. Like to
-  if (t.includes("like") && !t.includes("like to")) {
-    const verbs = [
-      "play",
-      "cook",
-      "read",
-      "dance",
-      "study",
-      "watch",
-      "ride",
-      "go",
-      "practice",
-    ];
-    if (verbs.some((v) => t.includes(v))) {
-      return {
-        isValid: false,
-        feedback:
-          "Casi 😄 Recuerda usar 'like to' antes del verbo. Por ejemplo: 'I like to cook'.",
-      };
-    }
-  }
-  return { isValid: true };
 }
 
 /* =====================================================
@@ -139,40 +35,48 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
   const currentQuestionIndexRef = useRef<number>(0);
   const sessionIdRef = useRef<string | null>(null);
-  const currentPartRef = useRef<number>(1);
-  const currentQuestionInPartRef = useRef<number>(1);
 
-  // --- CONTROL DE FLUJO Y SEMÁFORO ---
-  const canAdvanceRef = useRef(true); // Bloqueo lógico (gramática/idioma)
-  const expectingResponseRef = useRef(false); // SEMÁFORO (Turn Lock)
-  const isProcessingRef = useRef(false); // Bloqueo de red
+  // 🔒 FLOW CONTROL (claros y separados)
+  const waitingForUserRef = useRef(false);
 
-  const requestModelResponse = () => {
-    console.log("[AI CREATE] requestModelResponse()", {
-      canAdvance: canAdvanceRef.current,
-      expectingResponse: expectingResponseRef.current,
-      dcState: dcRef.current?.readyState,
-      timestamp: Date.now(),
-    });
+  /* =====================================================
+      LESSON 2 – ASK QUESTION (ÚNICA FUENTE DE VERDAD)
+  ===================================================== */
 
-    if (canAdvanceRef.current && dcRef.current?.readyState === "open") {
-      dcRef.current.send(JSON.stringify({ type: "response.create" }));
-    }
+  const askLesson2Question = () => {
+    const index = currentQuestionIndexRef.current;
+    const question = LESSON_2_VOICE_MVP_QUESTIONS[index];
+
+    if (!question || dcRef.current?.readyState !== "open") return;
+
+    dcRef.current.send(
+      JSON.stringify({
+        type: "session.update",
+        session: {
+          instructions: `
+${LESSON_2_VOICE_MVP_PROMPT}
+
+SYSTEM:
+Ask ONLY this question:
+"${question}"
+
+Then STOP and wait.
+          `,
+          tool_choice: "none",
+          temperature: 0.4,
+        },
+      }),
+    );
+
+    dcRef.current.send(JSON.stringify({ type: "response.create" }));
+
+    // 🔴 A partir de acá, SOLO el usuario puede destrabar el flujo
+    waitingForUserRef.current = true;
   };
 
-  const stopConversation = async () => {
-    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
-    dcRef.current?.close();
-    pcRef.current?.close();
-    audioRef.current?.remove();
-
-    mediaStreamRef.current = null;
-    dcRef.current = null;
-    pcRef.current = null;
-    audioRef.current = null;
-
-    setConnectionState("ended");
-  };
+  /* =====================================================
+      START CONVERSATION
+  ===================================================== */
 
   const startConversation = async () => {
     try {
@@ -182,28 +86,17 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
         `/api/assistant/simple-session?lesson=${lesson}&part=${part}`,
       );
       const response = await tokenRes.json();
-      const {
-        token,
-        sessionId,
-        currentQuestionIndex,
-        currentQuestionInPart,
-        part: responsePart,
-      } = response;
 
-      sessionIdRef.current = sessionId;
-      if (lesson === 2) {
-        currentPartRef.current = responsePart ?? part;
-        currentQuestionInPartRef.current = currentQuestionInPart ?? 1;
-      } else {
-        currentQuestionIndexRef.current = currentQuestionIndex ?? 0;
-      }
+      sessionIdRef.current = response.sessionId;
 
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
+
       const audio = document.createElement("audio");
       audio.autoplay = true;
       document.body.appendChild(audio);
       audioRef.current = audio;
+
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -216,175 +109,51 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
       dc.onopen = () => {
         setConnectionState("active");
 
-        // Inicializar sesión con prompt estricto
+        /* ---------------- LESSON 1 ---------------- */
         if (lesson === 1) {
           const question1Text =
             "Hi, I'm your conversation partner from The Language School. What is your name?";
-
-          const strictStartInstructions = `
-${SIMPLE_CONVERSATION_PROMPT}
-
-### CRITICAL STARTUP INSTRUCTION ###
-- IGNORE ALL SMALL TALK.
-- YOU ARE STARTING THE SESSION NOW.
-- YOUR CURRENT TARGET IS QUESTION INDEX: 1.
-- YOU MUST IMMEDIATELY ASK: "${question1Text}"
-- DO NOT ASK about "days of the week", "hobbies", or anything else.
-- WAIT FOR THE STUDENT TO RESPOND BEFORE ASKING ANOTHER QUESTION.
-`;
 
           dc.send(
             JSON.stringify({
               type: "session.update",
               session: {
-                instructions: strictStartInstructions,
+                instructions: `
+${SIMPLE_CONVERSATION_PROMPT}
+
+CRITICAL:
+You must immediately ask:
+"${question1Text}"
+Wait for the student's response.
+                `,
                 tool_choice: "none",
                 temperature: 0.6,
               },
             }),
           );
-        } else if (lesson === 2) {
-          const question1Text = "What is your name?";
 
-          const strictStartInstructions = `
-${SIMPLE_CONVERSATION_PROMPT_2}
-
-### CRITICAL STARTUP INSTRUCTION ###
-- YOU ARE IN PART 1: MAKING FRIENDS.
-- IGNORE ALL SMALL TALK.
-- YOU ARE STARTING THE SESSION NOW.
-- ASK ONLY ONE QUESTION AT A TIME.
-- YOU MUST IMMEDIATELY ASK: "${question1Text}"
-- AFTER ASKING, STOP COMPLETELY AND WAIT FOR THE STUDENT TO RESPOND.
-- DO NOT ASK A SECOND QUESTION UNTIL THE STUDENT HAS ANSWERED.
-- DO NOT COMBINE QUESTIONS.
-`;
-
-          dc.send(
-            JSON.stringify({
-              type: "session.update",
-              session: {
-                instructions: strictStartInstructions,
-                tool_choice: "none",
-                temperature: 0.3,
-              },
-            }),
-          );
+          dc.send(JSON.stringify({ type: "response.create" }));
         }
 
-        // Iniciamos el semáforo en rojo hasta que el usuario hable
-        expectingResponseRef.current = false;
-
-        console.log(
-          "[DC OPEN] DataChannel opened. Triggering initial response.create",
-          {
-            lesson,
-            part,
-            timestamp: Date.now(),
-          },
-        );
-
-        // 🚩 Disparamos la respuesta para que la IA obedezca la instrucción de arriba YA MISMO
-        requestModelResponse();
+        /* ---------------- LESSON 2 (VOICE MVP) ---------------- */
+        if (lesson === 2) {
+          currentQuestionIndexRef.current = 0;
+          askLesson2Question();
+        }
       };
 
       dc.onmessage = (event) => {
         const data = JSON.parse(event.data);
 
-        // --- 1. USUARIO HABLA ---
+        /* ---------------- USER SPOKE ---------------- */
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
+          // 🚫 Si no estamos esperando usuario, ignoramos
+          if (!waitingForUserRef.current) return;
+
           const text = data.transcript?.trim();
-
-          const isGarbage =
-            !text ||
-            text.length < 3 ||
-            /^(swooshy|electrolytes|uh|um)$/i.test(text);
-
-          if (isGarbage) {
-            dcRef.current?.send(
-              JSON.stringify({
-                type: "response.cancel",
-              }),
-            );
-
-            if (data.item_id) {
-              dcRef.current?.send(
-                JSON.stringify({
-                  type: "conversation.item.delete",
-                  item_id: data.item_id,
-                }),
-              );
-            }
-            return;
-          }
-
-          // Filtro de ruido
-          if (!text || text.length < 2) {
-            // Si es ruido, NO tocamos el semáforo. Dejamos que siga en el estado que estaba.
-            return;
-          }
-
-          const qIndex = currentQuestionIndexRef.current;
-
-          console.log("[USER INPUT]", {
-            transcript: text,
-            qIndex,
-            canAdvance: canAdvanceRef.current,
-            expectingResponse: expectingResponseRef.current,
-            timestamp: Date.now(),
-          });
-
-          // Validar gramática
-          const grammar = validateStudentGrammar(text);
-          if (!grammar.isValid) {
-            canAdvanceRef.current = false;
-            expectingResponseRef.current = false; // Bloqueamos semáforo (va a corregir)
-            dcRef.current?.send(
-              JSON.stringify({
-                type: "response.create",
-                response: {
-                  instructions: `Error: "${text}". Feedback: ${grammar.feedback}. Execute CORRECTION ALGORITHM.`,
-                },
-              }),
-            );
-            return;
-          }
-
-          // Validar idioma (What does)
-          if (isWhatDoesQuestion(qIndex)) {
-            if (looksLikeEnglish(text)) {
-              canAdvanceRef.current = false;
-              expectingResponseRef.current = false;
-              dcRef.current?.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    instructions: `Error: Answered in English. Tell student to translate to Spanish and repeat: "${getWhatDoesQuestionText(qIndex)}"`,
-                  },
-                }),
-              );
-              return;
-            }
-            if (!looksLikeValidSpanishMeaning(text, qIndex)) {
-              canAdvanceRef.current = false;
-              expectingResponseRef.current = false;
-              dcRef.current?.send(
-                JSON.stringify({
-                  type: "response.create",
-                  response: {
-                    instructions: `Error: Incorrect meaning. Explain in Spanish and repeat: "${getWhatDoesQuestionText(qIndex)}"`,
-                  },
-                }),
-              );
-              return;
-            }
-          }
-
-          // Respuesta válida
-          canAdvanceRef.current = true;
-          expectingResponseRef.current = true; // SEMÁFORO VERDE: Esperamos respuesta de IA para avanzar
+          if (!text || text.length < 2) return;
 
           setMessages((m) => [
             ...m,
@@ -396,27 +165,17 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
             },
           ]);
 
-          console.log(
-            "[VALID INPUT] Triggering response.create after user input",
-            {
-              canAdvance: canAdvanceRef.current,
-              expectingResponse: expectingResponseRef.current,
-            },
-          );
+          // 🔓 Avanzamos SOLO por input del usuario
+          waitingForUserRef.current = false;
+          currentQuestionIndexRef.current += 1;
 
-          requestModelResponse();
+          askLesson2Question();
         }
 
-        // --- 2. IA RESPONDE ---
+        /* ---------------- AI FINISHED SPEAKING ---------------- */
         if (data.type === "response.audio_transcript.done") {
           const assistantText = data.transcript?.trim();
           if (!assistantText) return;
-
-          // Solo avanzamos si el semáforo estaba verde
-          if (expectingResponseRef.current) {
-            handleAdvanceLogic(assistantText);
-            expectingResponseRef.current = false; // Volvemos a rojo
-          }
 
           setMessages((m) => [
             ...m,
@@ -427,23 +186,27 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
               timestamp: Date.now(),
             },
           ]);
+
+          // ❌ NUNCA se avanza acá
         }
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+
       const sdpRes = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${response.token}`,
             "Content-Type": "application/sdp",
             "OpenAI-Beta": "realtime=v1",
           },
           body: offer.sdp,
         },
       );
+
       await pc.setRemoteDescription({
         type: "answer",
         sdp: await sdpRes.text(),
@@ -451,62 +214,15 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
     } catch (err) {
       console.error(err);
       setErrorMessage("Error al iniciar la conversación");
-      stopConversation();
     }
   };
 
-  // --- LÓGICA DE AVANCE CENTRALIZADA ---
-  const handleAdvanceLogic = async (aiTranscript: string) => {
-    if (
-      !sessionIdRef.current ||
-      !canAdvanceRef.current ||
-      isProcessingRef.current
-    )
-      return;
-
-    isProcessingRef.current = true;
-    try {
-      // 1. LECCIÓN 2 — Advance deshabilitado en Voice MVP
-      if (lesson === 2) {
-        // No advance logic for Lesson 2 in Phase 1
-        return;
-      }
-
-      // 2. LECCIÓN 1 (Lógica simple)
-      const res = await fetch(
-        `/api/assistant/simple-session/${sessionIdRef.current}/process-response`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ aiTranscript }),
-        },
-      );
-
-      const data = await res.json();
-
-      if (data.advanced) {
-        currentQuestionIndexRef.current = data.currentIndex;
-
-        if (dcRef.current?.readyState === "open") {
-          dcRef.current.send(
-            JSON.stringify({
-              type: "session.update",
-              session: {
-                instructions: `STRICT UPDATE: You are now on Question ${data.currentIndex}. Ask ONLY: "${data.currentQuestion}".`,
-              },
-            }),
-          );
-
-          setTimeout(() => {
-            dcRef.current?.send(JSON.stringify({ type: "response.create" }));
-          }, 100);
-        }
-      }
-    } catch (e) {
-      console.error("Advance error:", e);
-    } finally {
-      isProcessingRef.current = false;
-    }
+  const stopConversation = () => {
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    dcRef.current?.close();
+    pcRef.current?.close();
+    audioRef.current?.remove();
+    setConnectionState("ended");
   };
 
   return {
@@ -517,6 +233,5 @@ ${SIMPLE_CONVERSATION_PROMPT_2}
     currentStep,
     startConversation,
     stopConversation,
-    requestSessionRecap: () => {},
   };
 }

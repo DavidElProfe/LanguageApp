@@ -111,7 +111,15 @@ assistantRouter.get("/simple-session", async (req, res) => {
         lesson2State.currentPart,
         lesson2State.currentQuestionInPart,
       );
-      fullInstructions = SIMPLE_CONVERSATION_PROMPT_2 + lesson2Context;
+
+      fullInstructions = `
+      You are an AI voice conversation partner.
+
+      IMPORTANT:
+      - You MUST remain silent until the system gives you a question.
+      - You must NEVER ask questions on your own.
+      - The system will control all questions.
+      `;
 
       const response = await createRealtimeSession(fullInstructions);
       res.json({
