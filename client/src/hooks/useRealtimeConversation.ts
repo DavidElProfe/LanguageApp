@@ -1,7 +1,6 @@
 import { useState, useRef } from "react";
 import { SIMPLE_CONVERSATION_PROMPT } from "../../../server/prompts/simpleConversationPrompt";
-
-import { LESSON_2_VOICE_MVP_PROMPT } from "../../../server/prompts/lesson_2_voice_mvp_prompt";
+// Nota: LESSON_2_VOICE_MVP_PROMPT ya no se usa dinámicamente, se define en el backend.
 import { LESSON_2_VOICE_MVP_QUESTIONS } from "../../../server/prompts/lesson2VoiceMvpQuestions";
 
 /* =====================================================
@@ -36,42 +35,40 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const currentQuestionIndexRef = useRef<number>(0);
   const sessionIdRef = useRef<string | null>(null);
 
-  // 🔒 FLOW CONTROL (claros y separados)
-  const waitingForUserRef = useRef(false);
-
   /* =====================================================
-      LESSON 2 – ASK QUESTION (ÚNICA FUENTE DE VERDAD)
+      HELPER: SEND COMMAND TO AI (TITIRITERO)
   ===================================================== */
+  // Esta función obliga a la IA a decir un texto específico
+  const forceAISpeech = (textToSay: string) => {
+    if (dcRef.current?.readyState !== "open") return;
 
-  const askLesson2Question = () => {
-    const index = currentQuestionIndexRef.current;
-    const question = LESSON_2_VOICE_MVP_QUESTIONS[index];
-
-    if (!question || dcRef.current?.readyState !== "open") return;
-
+    // 1. Inyectamos el mensaje en el historial de la conversación como si la IA lo hubiera pensado
     dcRef.current.send(
       JSON.stringify({
-        type: "session.update",
-        session: {
-          instructions: `
-${LESSON_2_VOICE_MVP_PROMPT}
-
-SYSTEM:
-Ask ONLY this question:
-"${question}"
-
-Then STOP and wait.
-          `,
-          tool_choice: "none",
-          temperature: 0.4,
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: textToSay,
+            },
+          ],
         },
       }),
     );
 
-    dcRef.current.send(JSON.stringify({ type: "response.create" }));
-
-    // 🔴 A partir de acá, SOLO el usuario puede destrabar el flujo
-    waitingForUserRef.current = true;
+    // 2. Le ordenamos que genere el audio de ese mensaje
+    dcRef.current.send(
+      JSON.stringify({
+        type: "response.create",
+        response: {
+          modalities: ["audio", "text"],
+          instructions: `Say exactly: "${textToSay}". Do not add anything else.`,
+        },
+      }),
+    );
   };
 
   /* =====================================================
@@ -82,6 +79,7 @@ Then STOP and wait.
     try {
       setConnectionState("connecting");
 
+      // 1. Obtenemos Token y Session ID (El backend configura las Tools aquí)
       const tokenRes = await fetch(
         `/api/assistant/simple-session?lesson=${lesson}&part=${part}`,
       );
@@ -89,6 +87,7 @@ Then STOP and wait.
 
       sessionIdRef.current = response.sessionId;
 
+      // 2. Setup WebRTC Standard
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
@@ -106,24 +105,22 @@ Then STOP and wait.
       const dc = pc.createDataChannel("oai-events");
       dcRef.current = dc;
 
+      // 3. Manejo de Eventos (La parte crítica)
       dc.onopen = () => {
+        console.log("[DC] open");
         setConnectionState("active");
 
-        /* ---------------- LESSON 1 ---------------- */
+        /* ---------------- LESSON 1 (Lógica original) ---------------- */
         if (lesson === 1) {
           const question1Text =
             "Hi, I'm your conversation partner from The Language School. What is your name?";
-
           dc.send(
             JSON.stringify({
               type: "session.update",
               session: {
                 instructions: `
 ${SIMPLE_CONVERSATION_PROMPT}
-
-CRITICAL:
-You must immediately ask:
-"${question1Text}"
+CRITICAL: Ask EXACTLY: "${question1Text}"
 Wait for the student's response.
                 `,
                 tool_choice: "none",
@@ -131,66 +128,106 @@ Wait for the student's response.
               },
             }),
           );
-
           dc.send(JSON.stringify({ type: "response.create" }));
         }
 
-        /* ---------------- LESSON 2 (VOICE MVP) ---------------- */
+        /* ---------------- LESSON 2 (NUEVA LÓGICA TOOLS) ---------------- */
         if (lesson === 2) {
           currentQuestionIndexRef.current = 0;
-          askLesson2Question();
+          const firstQuestion = LESSON_2_VOICE_MVP_QUESTIONS[0];
+
+          // Disparamos manualmente la primera pregunta para iniciar el bucle
+          console.log("[L2] Starting Drill with:", firstQuestion);
+          forceAISpeech(firstQuestion);
         }
       };
 
       dc.onmessage = (event) => {
         const data = JSON.parse(event.data);
 
-        /* ---------------- USER SPOKE ---------------- */
-        if (
-          data.type === "conversation.item.input_audio_transcription.completed"
-        ) {
-          // 🚫 Si no estamos esperando usuario, ignoramos
-          if (!waitingForUserRef.current) return;
+        /* ---------------- A. MANEJO DE TOOLS (Lesson 2) ---------------- */
+        if (data.type === "response.function_call_arguments.done") {
+          const toolName = data.name;
+          const args = JSON.parse(data.arguments);
 
-          const text = data.transcript?.trim();
-          if (!text || text.length < 2) return;
+          if (toolName === "ignore_noise") {
+            console.log("🔇 [AI] Ignorando ruido/silencio.");
+            // No hacemos NADA. La IA se queda callada.
+          }
 
-          setMessages((m) => [
-            ...m,
-            {
-              id: crypto.randomUUID(),
-              role: "user",
-              text,
-              timestamp: Date.now(),
-            },
-          ]);
+          if (toolName === "process_student_answer") {
+            const transcript = args.transcript;
+            console.log("🎤 [AI TOOL] Procesando respuesta:", transcript);
 
-          // 🔓 Avanzamos SOLO por input del usuario
-          waitingForUserRef.current = false;
-          currentQuestionIndexRef.current += 1;
+            // Agregar mensaje del usuario al chat visual
+            setMessages((m) => [
+              ...m,
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                text: transcript,
+                timestamp: Date.now(),
+              },
+            ]);
 
-          askLesson2Question();
+            // --- LÓGICA DE CONTROL DE FLUJO ---
+            // Aquí decides si la respuesta fue correcta o no.
+            // Por ahora, asumimos que siempre avanza (MVP).
+            const nextIndex = currentQuestionIndexRef.current + 1;
+            currentQuestionIndexRef.current = nextIndex;
+
+            const nextQuestion = LESSON_2_VOICE_MVP_QUESTIONS[nextIndex];
+
+            if (nextQuestion) {
+              // Feedback + Siguiente Pregunta
+              const feedbackText = `Good. Next: ${nextQuestion}`;
+              forceAISpeech(feedbackText);
+            } else {
+              // Fin de la lección
+              forceAISpeech("Excellent work. We have finished the lesson.");
+            }
+          }
         }
 
-        /* ---------------- AI FINISHED SPEAKING ---------------- */
+        /* ---------------- B. VISUALIZACIÓN (Lesson 1 y 2) ---------------- */
+        // Nota: En Lesson 2, el user message lo agregamos arriba al recibir la Tool.
+        // En Lesson 1, usamos el evento standard de transcripción.
+        if (
+          lesson === 1 &&
+          data.type === "conversation.item.input_audio_transcription.completed"
+        ) {
+          const text = data.transcript?.trim();
+          if (text) {
+            setMessages((m) => [
+              ...m,
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                text,
+                timestamp: Date.now(),
+              },
+            ]);
+          }
+        }
+
         if (data.type === "response.audio_transcript.done") {
           const assistantText = data.transcript?.trim();
-          if (!assistantText) return;
-
-          setMessages((m) => [
-            ...m,
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              text: assistantText,
-              timestamp: Date.now(),
-            },
-          ]);
-
-          // ❌ NUNCA se avanza acá
+          if (assistantText) {
+            console.log("🤖 [AI SPOKE]", assistantText);
+            setMessages((m) => [
+              ...m,
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                text: assistantText,
+                timestamp: Date.now(),
+              },
+            ]);
+          }
         }
       };
 
+      // 4. Conexión SDP Standard
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 

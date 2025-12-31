@@ -37,6 +37,32 @@ const ENGLISH_ANSWERS = [
   "classroom",
 ];
 
+const LESSON_2_TOOLS = [
+  {
+    type: "function",
+    name: "ignore_noise",
+    description:
+      "CALL THIS if the audio is silence, background noise, coughing, or irrelevant sounds. DO NOT SPEAK.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    type: "function",
+    name: "process_student_answer",
+    description:
+      "CALL THIS when the user speaks a deliberate attempt at an answer (even if wrong).",
+    parameters: {
+      type: "object",
+      properties: {
+        transcript: {
+          type: "string",
+          description: "The text transcription of what the user said",
+        },
+      },
+      required: ["transcript"],
+    },
+  },
+];
+
 const isWhatDoesQuestion = (index: number): boolean => {
   return index >= WHAT_DOES_START && index <= WHAT_DOES_END;
 };
@@ -107,25 +133,31 @@ assistantRouter.get("/simple-session", async (req, res) => {
         partNumber,
         questionInPart,
       );
-      const lesson2Context = generateLesson2Context(
+
+      const currentQuestionText = getLesson2Question(
         lesson2State.currentPart,
         lesson2State.currentQuestionInPart,
       );
 
       fullInstructions = `
-      You are a voice engine.
+      ROLE: You are a strict Audio Routing System, NOT a conversational assistant.
+      CURRENT OBJECTIVE: Wait for the user to say: "${currentQuestionText}" (or similar).
 
-      You are NOT a chatbot.
-      You must NOT greet.
-      You must NOT start conversations.
-      You must NOT ask questions.
-      You must remain COMPLETELY SILENT until a SYSTEM instruction tells you exactly what to say.
+      RULES:
+      1. YOU HAVE NO VOICE. You are forbidden from generating audio response directly.
+      2. Listen to the user input.
+      3. If the input is silence, noise, or clearly not speech -> Call "ignore_noise".
+      4. If the input is speech (correct or incorrect) -> Call "process_student_answer" with the transcript.
 
-      If you are not explicitly instructed, say NOTHING.
+      CRITICAL: DO NOT say "Hello", "I am ready", or "How can I help". JUST WAIT AND ROUTE.
       `;
-      
 
-      const response = await createRealtimeSession(fullInstructions);
+      const response = await createRealtimeSession(
+        fullInstructions,
+        true,
+        LESSON_2_TOOLS,
+      );
+
       res.json({
         token: response.client_secret.value,
         mode: "simple",
@@ -144,7 +176,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
 
       fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
 
-      const response = await createRealtimeSession(fullInstructions);
+      const response = await createRealtimeSession(fullInstructions, true);
       res.json({
         token: response.client_secret.value,
         mode: "simple",
@@ -159,23 +191,35 @@ assistantRouter.get("/simple-session", async (req, res) => {
   }
 });
 
-async function createRealtimeSession(instructions: string) {
-  return await openai.beta.realtime.sessions.create({
+async function createRealtimeSession(
+  instructions: string,
+  useVAD: boolean,
+  tools?: any[],
+) {
+  const sessionConfig: any = {
     model: "gpt-4o-realtime-preview-2024-12-17",
     voice: "alloy",
-    instructions: instructions,
+    instructions,
     modalities: ["text", "audio"],
-    turn_detection: {
+    input_audio_transcription: { model: "whisper-1" },
+    temperature: 0.6,
+  };
+
+  if (useVAD) {
+    sessionConfig.turn_detection = {
       type: "server_vad",
       threshold: 0.8,
       prefix_padding_ms: 500,
       silence_duration_ms: 3000,
-    },
-    input_audio_transcription: {
-      model: "whisper-1",
-    },
-    temperature: 0.6,
-  });
+    };
+  }
+
+  if (tools && tools.length > 0) {
+    sessionConfig.tools = tools;
+    sessionConfig.tool_choice = "required";
+  }
+
+  return await openai.beta.realtime.sessions.create(sessionConfig);
 }
 
 assistantRouter.post(
