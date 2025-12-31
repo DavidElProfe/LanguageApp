@@ -113,13 +113,17 @@ assistantRouter.get("/simple-session", async (req, res) => {
       );
 
       fullInstructions = `
-      You are an AI voice conversation partner.
+      You are a voice engine.
 
-      IMPORTANT:
-      - You MUST remain silent until the system gives you a question.
-      - You must NEVER ask questions on your own.
-      - The system will control all questions.
+      You are NOT a chatbot.
+      You must NOT greet.
+      You must NOT start conversations.
+      You must NOT ask questions.
+      You must remain COMPLETELY SILENT until a SYSTEM instruction tells you exactly what to say.
+
+      If you are not explicitly instructed, say NOTHING.
       `;
+      
 
       const response = await createRealtimeSession(fullInstructions);
       res.json({
