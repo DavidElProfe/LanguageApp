@@ -1,27 +1,13 @@
 import { Router } from "express";
 import OpenAI from "openai";
-import {
-  getBasePrompt,
-  getLessonPrompt,
-  validateLesson,
-  TOTAL_LESSONS,
-  getLesson1MasterPrompt,
-  getLesson1Step,
-  type Lesson1Step,
-} from "./prompts/promptManager";
+
 import { SIMPLE_CONVERSATION_PROMPT } from "./prompts/simpleConversationPrompt";
-import { SIMPLE_CONVERSATION_PROMPT_2 } from "./prompts/simpleConversationPrompt2";
+
 import {
   TOTAL_QUESTIONS,
   getQuestionByIndex,
   findQuestionIndex,
 } from "./prompts/simpleConversationQuestions";
-import {
-  getLesson2Part,
-  getLesson2Question,
-  getLesson2PartQuestionCount,
-  generateLesson2Context,
-} from "./prompts/lesson2Questions";
 
 const WHAT_DOES_START = 24;
 const WHAT_DOES_END = 31;
@@ -110,6 +96,10 @@ const openai = new OpenAI({
 });
 
 assistantRouter.get("/simple-session", async (req, res) => {
+  console.log("--------------------------------------------------");
+  console.log("🚀 [BACKEND] GET /simple-session REQUEST RECEIVED");
+  console.log("📥 [BACKEND] Query Params:", req.query);
+
   try {
     const lessonParam = req.query.lesson;
     let lessonNumber = 1;
@@ -120,11 +110,16 @@ assistantRouter.get("/simple-session", async (req, res) => {
       }
     }
 
+    console.log(`ℹ️ [BACKEND] Resolved Lesson Number: ${lessonNumber}`);
+
     const sessionId = `simple_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    console.log(`🆔 [BACKEND] Generated Session ID: ${sessionId}`);
 
     let fullInstructions: string;
 
     if (lessonNumber === 2) {
+      console.log("🛠️ [BACKEND] Configuring LESSON 2 (Strict Mode)");
+
       const partNumber = parseInt(req.query.part as string, 10) || 1;
       const questionInPart = parseInt(req.query.question as string, 10) || 1;
 
@@ -134,10 +129,8 @@ assistantRouter.get("/simple-session", async (req, res) => {
         questionInPart,
       );
 
-      const currentQuestionText = getLesson2Question(
-        lesson2State.currentPart,
-        lesson2State.currentQuestionInPart,
-      );
+      // (Opcional) Log para ver qué pregunta cree el backend que es
+      // const currentQuestionText = getLesson2Question(...)
 
       fullInstructions = `
       ROLE: You are an Audio Routing System.
@@ -151,11 +144,19 @@ assistantRouter.get("/simple-session", async (req, res) => {
          - When commanded to speak, read the text clearly and naturally.
       `;
 
+      console.log(
+        "📜 [BACKEND] Lesson 2 Instructions Length:",
+        fullInstructions.length,
+      );
+
+      // Pasamos true a VAD y las tools
       const response = await createRealtimeSession(
         fullInstructions,
         true,
         LESSON_2_TOOLS,
       );
+
+      console.log("✅ [BACKEND] Lesson 2 Session Created Successfully");
 
       res.json({
         token: response.client_secret.value,
@@ -166,6 +167,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
         currentQuestionInPart: lesson2State.currentQuestionInPart,
       });
     } else {
+      console.log("🗣️ [BACKEND] Configuring LESSON 1 (Open Mode)");
       const initialIndex =
         parseInt(req.query.initialQuestionIndex as string, 10) || 1;
       const sessionState = getOrCreateSessionState(sessionId, initialIndex);
@@ -176,6 +178,9 @@ assistantRouter.get("/simple-session", async (req, res) => {
       fullInstructions = SIMPLE_CONVERSATION_PROMPT + silentContext;
 
       const response = await createRealtimeSession(fullInstructions, true);
+
+      console.log("✅ [BACKEND] Lesson 1 Session Created Successfully");
+
       res.json({
         token: response.client_secret.value,
         mode: "simple",
@@ -185,7 +190,7 @@ assistantRouter.get("/simple-session", async (req, res) => {
       });
     }
   } catch (error: any) {
-    console.error(`[SESSION_ERROR]`, error.message);
+    console.error(`❌ [BACKEND ERROR]`, error.message);
     res.status(500).json({ error: error.message });
   }
 });
@@ -195,6 +200,8 @@ async function createRealtimeSession(
   useVAD: boolean,
   tools?: any[],
 ) {
+  console.log("⚙️ [BACKEND] Building Session Config...");
+
   const sessionConfig: any = {
     model: "gpt-4o-realtime-preview-2024-12-17",
     voice: "alloy",
@@ -214,25 +221,54 @@ async function createRealtimeSession(
   }
 
   if (tools && tools.length > 0) {
+    console.log("🔧 [BACKEND] Injecting Tools & Setting Tool Choice");
     sessionConfig.tools = tools;
 
     // CAMBIO CRÍTICO: VOLVEMOS A REQUIRED
     // Esto mata el "Processing your answer" inmediatamente.
     sessionConfig.tool_choice = "required";
+
+    console.log("🔒 [BACKEND] tool_choice set to:", sessionConfig.tool_choice);
+  } else {
+    console.log("🔓 [BACKEND] No tools provided (Free conversation)");
   }
 
-  return await openai.beta.realtime.sessions.create(sessionConfig);
+  // LOG CRÍTICO: Ver qué le mandamos exactamente a OpenAI
+  console.log(
+    "📦 [BACKEND] FINAL CONFIG TO OPENAI:",
+    JSON.stringify(
+      {
+        ...sessionConfig,
+        instructions: "HIDDEN (Too long)", // Ocultamos instrucciones para no ensuciar el log
+      },
+      null,
+      2,
+    ),
+  );
+
+  try {
+    const result = await openai.beta.realtime.sessions.create(sessionConfig);
+    console.log("📡 [BACKEND] OpenAI API Response ID:", (result as any).id);
+    return result;
+  } catch (err: any) {
+    console.error("🔥 [BACKEND] OpenAI API CRASH:", err);
+    throw err;
+  }
 }
 
 assistantRouter.post(
   "/simple-session/:sessionId/process-response",
   async (req, res) => {
     const { sessionId } = req.params;
+    console.log(`🔄 [BACKEND] Process Response for Session: ${sessionId}`);
+
     const { aiTranscript, studentTranscript } = req.body;
     const sessionState = simpleSessionStates.get(sessionId);
 
     if (!sessionState) {
-      console.warn(`[PROCESS_ERROR] Session ${sessionId} not found`);
+      console.warn(
+        `⚠️ [PROCESS_ERROR] Session ${sessionId} not found in Memory`,
+      );
       return res.status(404).json({ error: "Session not found" });
     }
 
