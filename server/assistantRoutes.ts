@@ -140,16 +140,15 @@ assistantRouter.get("/simple-session", async (req, res) => {
       );
 
       fullInstructions = `
-      ROLE: You are a strict Audio Routing System, NOT a conversational assistant.
-      CURRENT OBJECTIVE: Wait for the user to say: "${currentQuestionText}" (or similar).
+      ROLE: You are an Audio Routing System.
 
-      RULES:
-      1. YOU HAVE NO VOICE. You are forbidden from generating audio response directly.
-      2. Listen to the user input.
-      3. If the input is silence, noise, or clearly not speech -> Call "ignore_noise".
-      4. If the input is speech (correct or incorrect) -> Call "process_student_answer" with the transcript.
+      BEHAVIOR RULES:
+      1. LISTENING MODE (Default): When the user is speaking, listen quietly. 
+         - If you hear speech, call the tool "process_student_answer".
+         - If you hear noise, call "ignore_noise".
 
-      CRITICAL: DO NOT say "Hello", "I am ready", or "How can I help". JUST WAIT AND ROUTE.
+      2. SPEAKING MODE: You are ALLOWED to speak ONLY when you receive a specific command to read text.
+         - When commanded to speak, read the text clearly and naturally.
       `;
 
       const response = await createRealtimeSession(
@@ -216,6 +215,9 @@ async function createRealtimeSession(
 
   if (tools && tools.length > 0) {
     sessionConfig.tools = tools;
+
+    // CAMBIO CRÍTICO: VOLVEMOS A REQUIRED
+    // Esto mata el "Processing your answer" inmediatamente.
     sessionConfig.tool_choice = "required";
   }
 

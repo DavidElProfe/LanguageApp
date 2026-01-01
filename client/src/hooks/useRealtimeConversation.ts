@@ -38,34 +38,49 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   /* =====================================================
       HELPER: SEND COMMAND TO AI (TITIRITERO)
   ===================================================== */
-  // Esta función obliga a la IA a decir un texto específico
   const forceAISpeech = (textToSay: string) => {
     if (dcRef.current?.readyState !== "open") return;
 
-    // 1. Inyectamos el mensaje en el historial de la conversación como si la IA lo hubiera pensado
+    // 1. UI Optimista (Mostrar texto ya)
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: textToSay,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    // 2. Limpieza de Buffer (Para que no escuche ecos ni alucinaciones)
+    dcRef.current.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
+
+    // 3. Insertar mensaje en historial para contexto
     dcRef.current.send(
       JSON.stringify({
         type: "conversation.item.create",
         item: {
           type: "message",
           role: "assistant",
-          content: [
-            {
-              type: "text",
-              text: textToSay,
-            },
-          ],
+          content: [{ type: "text", text: textToSay }],
         },
       }),
     );
 
-    // 2. Le ordenamos que genere el audio de ese mensaje
+    // 4. EL TRUCO FINAL: Response Create con "tool_choice: none"
+    // Al enviar tool_choice: "none" AQUÍ, anulamos el "required" del backend
+    // solo por este turno, permitiendo que la IA hable.
     dcRef.current.send(
       JSON.stringify({
         type: "response.create",
         response: {
-          modalities: ["audio", "text"],
-          instructions: `Say exactly: "${textToSay}". Do not add anything else.`,
+          modalities: ["text", "audio"],
+          instructions: `
+            SYSTEM OVERRIDE: You are temporarily a Text-to-Speech engine.
+            IGNORE the "Use Tools" rule.
+            READ this text aloud: "${textToSay}"
+          `,
+          tool_choice: "none", // <--- ESTO ES LA LLAVE QUE DESBLOQUEA LA VOZ
         },
       }),
     );
@@ -79,7 +94,7 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
     try {
       setConnectionState("connecting");
 
-      // 1. Obtenemos Token y Session ID (El backend configura las Tools aquí)
+      // 1. Obtenemos Token y Session ID
       const tokenRes = await fetch(
         `/api/assistant/simple-session?lesson=${lesson}&part=${part}`,
       );
@@ -138,7 +153,10 @@ Wait for the student's response.
 
           // Disparamos manualmente la primera pregunta para iniciar el bucle
           console.log("[L2] Starting Drill with:", firstQuestion);
-          forceAISpeech(firstQuestion);
+
+          setTimeout(() => {
+            forceAISpeech(firstQuestion);
+          }, 500);
         }
       };
 
@@ -149,10 +167,27 @@ Wait for the student's response.
         if (data.type === "response.function_call_arguments.done") {
           const toolName = data.name;
           const args = JSON.parse(data.arguments);
+          const callId = data.call_id; // <--- IMPORTANTE: Necesitamos el ID
+
+          // 1. SIEMPRE CERRAMOS EL CICLO DE LA TOOL
+          // Si no enviamos esto, la IA se queda "pensando" en la función y no acepta
+          // la siguiente orden de audio.
+          if (callId) {
+            dc.send(
+              JSON.stringify({
+                type: "conversation.item.create",
+                item: {
+                  type: "function_call_output",
+                  call_id: callId,
+                  output: JSON.stringify({ success: true }), // Respuesta dummy para liberar a la IA
+                },
+              }),
+            );
+          }
 
           if (toolName === "ignore_noise") {
             console.log("🔇 [AI] Ignorando ruido/silencio.");
-            // No hacemos NADA. La IA se queda callada.
+            // No hacemos NADA más.
           }
 
           if (toolName === "process_student_answer") {
@@ -171,27 +206,29 @@ Wait for the student's response.
             ]);
 
             // --- LÓGICA DE CONTROL DE FLUJO ---
-            // Aquí decides si la respuesta fue correcta o no.
-            // Por ahora, asumimos que siempre avanza (MVP).
             const nextIndex = currentQuestionIndexRef.current + 1;
             currentQuestionIndexRef.current = nextIndex;
 
             const nextQuestion = LESSON_2_VOICE_MVP_QUESTIONS[nextIndex];
 
-            if (nextQuestion) {
-              // Feedback + Siguiente Pregunta
-              const feedbackText = `Good. Next: ${nextQuestion}`;
-              forceAISpeech(feedbackText);
-            } else {
-              // Fin de la lección
-              forceAISpeech("Excellent work. We have finished the lesson.");
-            }
+            // Pequeño delay para naturalidad
+            setTimeout(() => {
+              if (nextQuestion) {
+                // Feedback + Siguiente Pregunta
+                const feedbackText = `Good. Next: ${nextQuestion}`;
+                forceAISpeech(feedbackText);
+              } else {
+                // Fin de la lección
+                forceAISpeech("Excellent work. We have finished the lesson.");
+              }
+            }, 100);
           }
         }
 
-        /* ---------------- B. VISUALIZACIÓN (Lesson 1 y 2) ---------------- */
-        // Nota: En Lesson 2, el user message lo agregamos arriba al recibir la Tool.
-        // En Lesson 1, usamos el evento standard de transcripción.
+        /* ---------------- B. VISUALIZACIÓN ---------------- */
+
+        // VISUALIZACIÓN USER (Solo Lesson 1 usa el evento standard)
+        // En Lesson 2, el mensaje user lo agregamos arriba en 'process_student_answer'
         if (
           lesson === 1 &&
           data.type === "conversation.item.input_audio_transcription.completed"
@@ -210,10 +247,13 @@ Wait for the student's response.
           }
         }
 
-        if (data.type === "response.audio_transcript.done") {
+        // VISUALIZACIÓN ASSISTANT
+        // Para Lesson 2, usamos Optimistic UI en forceAISpeech, así que ignoramos este evento
+        // para evitar duplicados. Solo lo usamos para Lesson 1.
+        if (lesson === 1 && data.type === "response.audio_transcript.done") {
           const assistantText = data.transcript?.trim();
           if (assistantText) {
-            console.log("🤖 [AI SPOKE]", assistantText);
+            console.log("🤖 [AI SPOKE - L1]", assistantText);
             setMessages((m) => [
               ...m,
               {
