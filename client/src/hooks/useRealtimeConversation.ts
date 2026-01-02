@@ -27,51 +27,27 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const currentQuestionIndexRef = useRef<number>(0);
   const sessionIdRef = useRef<string | null>(null);
 
-  // SEMÁFORO: Para evitar que la IA se interrumpa a sí misma
-  const isAiSpeakingRef = useRef<boolean>(false);
+  const isProcessingRef = useRef<boolean>(false);
 
   /* =====================================================
-      HELPER: SEND COMMAND TO AI (TITIRITERO)
-  ===================================================== */
-  /* =====================================================
-      HELPER: SEND COMMAND TO AI (TITIRITERO)
+      HELPER: FORCE AI SPEECH (TITIRITERO)
   ===================================================== */
   const forceAISpeech = (textToSay: string) => {
-    if (dcRef.current?.readyState !== "open") return;
+    if (!dcRef.current || dcRef.current.readyState !== "open") return;
 
-    console.log(
-      "🚨 [TITIRITERO] Intentando forzar a la IA a decir:",
-      textToSay,
-    );
+    console.log(`🔵 [TITIRITERO] Ordenando: "${textToSay}"`);
 
-    // Marcamos que la IA va a hablar (para el filtro anti-eco)
-    isAiSpeakingRef.current = true;
-
-    // 1. UI Optimista (Para que lo veas instantáneo en pantalla)
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        text: textToSay,
-        timestamp: Date.now(),
-      },
-    ]);
-
-    // 2. LIMPIEZA DE BUFFER
+    // Limpiamos buffer por seguridad
     dcRef.current.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
 
-    // 3. ¡ELIMINADO! Ya no enviamos "conversation.item.create" aquí.
-    // Dejamos que la IA cree el item real con el response.create.
-
-    // 4. ORDENAR HABLAR
+    // Mandamos la orden estricta
     dcRef.current.send(
       JSON.stringify({
         type: "response.create",
         response: {
           modalities: ["text", "audio"],
-          instructions: `SAY EXACTLY: "${textToSay}"`,
-          tool_choice: "none", // Forzamos voz
+          instructions: `READ THIS EXACTLY: "${textToSay}"`,
+          tool_choice: "none",
         },
       }),
     );
@@ -105,7 +81,7 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
       dcRef.current = dc;
 
       dc.onopen = () => {
-        console.log("[DC] open");
+        console.log("✅ [DC] OPEN");
         setConnectionState("active");
 
         if (lesson === 1) {
@@ -116,8 +92,6 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
               type: "session.update",
               session: {
                 instructions: `${SIMPLE_CONVERSATION_PROMPT} \n Ask: "${question1Text}"`,
-                tool_choice: "none",
-                temperature: 0.6,
               },
             }),
           );
@@ -125,11 +99,23 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
         }
 
         if (lesson === 2) {
+          // CONFIGURACIÓN INICIAL DRILL
           currentQuestionIndexRef.current = 0;
-          const firstQuestion = LESSON_2_VOICE_MVP_QUESTIONS[0];
-          console.log("[L2] Starting Drill with:", firstQuestion);
 
-          // Esperamos un momento para que el audio esté listo
+          // Configuramos para que sepa que es un robot, aunque el "reflejo" siga vivo
+          dc.send(
+            JSON.stringify({
+              type: "session.update",
+              session: {
+                instructions:
+                  "System: You are a passive reading engine. Wait for commands.",
+                tool_choice: "none",
+                temperature: 0.6,
+              },
+            }),
+          );
+
+          const firstQuestion = LESSON_2_VOICE_MVP_QUESTIONS[0];
           setTimeout(() => {
             forceAISpeech(firstQuestion);
           }, 500);
@@ -144,136 +130,104 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           return;
         }
 
-        // --- GESTIÓN DE ESTADO DE AUDIO ---
-        // Cuando la IA empieza a hablar
-        if (data.type === "response.audio.delta") {
-          if (!isAiSpeakingRef.current) {
-            console.log("🔊 [SYSTEM] Recibiendo Audio Streaming...");
-          }
-
-          isAiSpeakingRef.current = true;
-        }
-        // Cuando la IA termina de hablar
-        if (data.type === "response.done") {
-          // Le damos un pequeño "tiempo de gracia" para que muera el eco
-          setTimeout(() => {
-            isAiSpeakingRef.current = false;
-            console.log("✅ [SYSTEM] IA terminó. Escuchando usuario...");
-          }, 500);
-        }
-
-        // --- MANEJO DE TOOLS ---
-        if (data.type === "response.function_call_arguments.done") {
-          const toolName = data.name;
-          const args = JSON.parse(data.arguments);
-          const callId = data.call_id;
-
-          // Cerrar ciclo de tool
-          if (callId) {
-            dc.send(
-              JSON.stringify({
-                type: "conversation.item.create",
-                item: {
-                  type: "function_call_output",
-                  call_id: callId,
-                  output: JSON.stringify({ success: true }),
-                },
-              }),
+        // ==========================================================
+        // 🔪 EL ASESINO DE REFLEJOS (SOLUCIÓN A "DOS LÓGICAS")
+        // ==========================================================
+        // Cuando detectamos que el usuario dejó de hablar, la IA automáticamente
+        // intentará responder. AQUÍ LA MATAMOS antes de que empiece.
+        if (data.type === "input_audio_buffer.speech_stopped") {
+          if (lesson === 2) {
+            console.log(
+              "🤫 [SILENCIADOR] Speech stopped -> Cancelando respuesta automática.",
             );
+            dc.send(JSON.stringify({ type: "response.cancel" }));
           }
+        }
 
-          if (toolName === "process_student_answer") {
-            const transcript = args.transcript;
+        // ==========================================================
+        // 🧠 EL CEREBRO TITIRITERO (TU LÓGICA)
+        // ==========================================================
+        // Usamos la transcripción para decidir nosotros qué sigue.
+        if (
+          data.type === "conversation.item.input_audio_transcription.completed"
+        ) {
+          const userText = data.transcript.trim();
 
-            // --- FILTROS DE SEGURIDAD (ANTI-ECO / ANTI-ALUCINACIÓN) ---
+          if (!userText) return;
 
-            // 1. Si la IA estaba hablando cuando "escuchó" esto -> DESCARTAR
-            if (isAiSpeakingRef.current) {
-              console.warn(
-                "🛡️ [FILTRO] Ignorando input mientras la IA habla/eco.",
-              );
-              return;
-            }
-
-            // 2. Si el texto es igual a la pregunta -> DESCARTAR (Eco)
+          if (lesson === 2) {
+            // Filtro Eco
             const currentQ =
               LESSON_2_VOICE_MVP_QUESTIONS[currentQuestionIndexRef.current];
-            const cleanTranscript = transcript
-              .toLowerCase()
-              .replace(/[^a-z0-9]/g, "");
-            const cleanQuestion = currentQ
-              ? currentQ.toLowerCase().replace(/[^a-z0-9]/g, "")
-              : "";
-
-            if (cleanQuestion && cleanTranscript.includes(cleanQuestion)) {
-              console.warn(`🛡️ [FILTRO] Eco detectado: "${transcript}"`);
+            if (
+              currentQ &&
+              userText
+                .toLowerCase()
+                .includes(currentQ.toLowerCase().substring(0, 15))
+            ) {
               return;
             }
 
-            console.log("🎤 [VALIDO] Usuario dijo:", transcript);
+            if (isProcessingRef.current) return;
+            isProcessingRef.current = true;
 
+            console.log(`👤 [USER] "${userText}"`);
             setMessages((m) => [
               ...m,
               {
                 id: crypto.randomUUID(),
                 role: "user",
-                text: transcript,
+                text: userText,
                 timestamp: Date.now(),
               },
             ]);
 
-            // Avanzar
+            // Avanzamos
             const nextIndex = currentQuestionIndexRef.current + 1;
             currentQuestionIndexRef.current = nextIndex;
             const nextQuestion = LESSON_2_VOICE_MVP_QUESTIONS[nextIndex];
 
+            // Esperamos un poquito para que sea natural
             setTimeout(() => {
+              isProcessingRef.current = false;
               if (nextQuestion) {
-                forceAISpeech(`${nextQuestion}`);
+                forceAISpeech(`Good. Next: ${nextQuestion}`);
               } else {
                 forceAISpeech("Excellent work. Lesson finished.");
               }
-            }, 200);
+            }, 500);
+          } else {
+            setMessages((m) => [
+              ...m,
+              {
+                id: crypto.randomUUID(),
+                role: "user",
+                text: userText,
+                timestamp: Date.now(),
+              },
+            ]);
           }
         }
 
-        // --- VISUALIZACIÓN LESSON 1 ---
-        if (lesson === 1) {
-          if (
-            data.type ===
-            "conversation.item.input_audio_transcription.completed"
-          ) {
-            const text = data.transcript?.trim();
-            if (text)
-              setMessages((m) => [
-                ...m,
-                {
-                  id: crypto.randomUUID(),
-                  role: "user",
-                  text,
-                  timestamp: Date.now(),
-                },
-              ]);
-          }
-          if (data.type === "response.audio_transcript.done") {
-            const text = data.transcript?.trim();
-            if (text)
-              setMessages((m) => [
-                ...m,
-                {
-                  id: crypto.randomUUID(),
-                  role: "assistant",
-                  text,
-                  timestamp: Date.now(),
-                },
-              ]);
+        if (data.type === "response.audio_transcript.done") {
+          const aiText = data.transcript;
+          // Solo mostramos si no está vacía (a veces el cancel genera strings vacíos)
+          if (aiText && aiText.trim() !== "") {
+            setMessages((m) => [
+              ...m,
+              {
+                id: crypto.randomUUID(),
+                role: "assistant",
+                text: aiText,
+                timestamp: Date.now(),
+              },
+            ]);
           }
         }
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       const sdpRes = await fetch(
         "https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17",
         {
@@ -286,14 +240,13 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           body: offer.sdp,
         },
       );
-
       await pc.setRemoteDescription({
         type: "answer",
         sdp: await sdpRes.text(),
       });
     } catch (err) {
       console.error(err);
-      setErrorMessage("Error al iniciar la conversación");
+      setErrorMessage("Error al iniciar");
     }
   };
 
