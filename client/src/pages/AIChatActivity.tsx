@@ -1,6 +1,6 @@
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Mic, Square, ChevronLeft } from "lucide-react";
+import { Mic, Square, ChevronLeft, Volume2 } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -17,9 +17,12 @@ import { useRealtimeConversation } from "@/hooks/useRealtimeConversation";
 import ConversationTranscript from "@/components/ConversationTranscript";
 import { queryClient } from "@/lib/queryClient";
 
+// 🔊 TTS (NUEVO)
+import { useTTSPlayer } from "@/hooks/useTTSPlayer";
+
 export default function AIChatActivity() {
   const [, params] = useRoute(
-    "/courses/:courseId/lessons/:lessonId/topics/:topicId/chat"
+    "/courses/:courseId/lessons/:lessonId/topics/:topicId/chat",
   );
   const [, setLocation] = useLocation();
   const { user } = useAuth();
@@ -55,11 +58,18 @@ export default function AIChatActivity() {
   const topic = lesson?.topics?.find((t: any) => t.id === params?.topicId);
   const chatActivity = topic?.activities?.find((a: any) => a.type === "chat");
 
-  // Get lesson order for the AI prompt system (1-10)
   const lessonOrder = lesson?.order ?? 1;
-  
-  const { connectionState, errorMessage, messages, currentStep, startConversation, stopConversation } =
-    useRealtimeConversation({ lesson: lessonOrder });
+
+  const {
+    connectionState,
+    errorMessage,
+    messages,
+    startConversation,
+    stopConversation,
+  } = useRealtimeConversation({ lesson: lessonOrder });
+
+  // 🔊 TTS hook (NUEVO)
+  const { speak, speakLessonQuestion, isPlaying } = useTTSPlayer();
 
   const completeActivity = useMutation({
     mutationFn: async (activityId: string) => {
@@ -86,7 +96,9 @@ export default function AIChatActivity() {
   });
 
   const completedIds = new Set(
-    (Array.isArray(completions) ? completions : []).map((c: any) => c.activityId)
+    (Array.isArray(completions) ? completions : []).map(
+      (c: any) => c.activityId,
+    ),
   );
   const isActivityComplete = chatActivity?.id
     ? completedIds.has(chatActivity.id)
@@ -111,7 +123,7 @@ export default function AIChatActivity() {
           title: "¡Excelente!",
           description: "Conversación completada",
         });
-      } catch (error: any) {
+      } catch {
         toast({
           title: "Error",
           description: "No se pudo guardar el progreso",
@@ -120,9 +132,8 @@ export default function AIChatActivity() {
       }
     }
 
-    // Navigate back to topic
     setLocation(
-      `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}`
+      `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}`,
     );
   };
 
@@ -130,11 +141,7 @@ export default function AIChatActivity() {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
-        <main className="flex-1 py-12">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6">
-            <div className="text-center py-12">Cargando...</div>
-          </div>
-        </main>
+        <main className="flex-1 py-12 text-center">Cargando...</main>
         <Footer />
       </div>
     );
@@ -144,10 +151,8 @@ export default function AIChatActivity() {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
-        <main className="flex-1 py-12">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6">
-            <div className="text-center py-12">Actividad no encontrada</div>
-          </div>
+        <main className="flex-1 py-12 text-center">
+          Actividad no encontrada
         </main>
         <Footer />
       </div>
@@ -180,11 +185,10 @@ export default function AIChatActivity() {
             variant="ghost"
             onClick={() =>
               setLocation(
-                `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}`
+                `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}`,
               )
             }
             className="mb-6"
-            data-testid="button-back"
           >
             <ChevronLeft className="mr-2 h-4 w-4" />
             Volver al tema
@@ -192,50 +196,29 @@ export default function AIChatActivity() {
 
           <Card>
             <CardHeader>
-              <CardTitle data-testid="text-activity-title">
-                Actividad 3: Conversar con IA
-              </CardTitle>
-              <CardDescription data-testid="text-topic-title">
-                {topic.title}
-              </CardDescription>
+              <CardTitle>Actividad 3: Conversar con IA</CardTitle>
+              <CardDescription>{topic.title}</CardDescription>
             </CardHeader>
+
             <CardContent className="space-y-6">
-              <div className="text-center py-8">
-                <div
-                  className="text-6xl mb-4"
-                  role="img"
-                  aria-label="Conversation"
-                >
-                  💬
-                </div>
-                <p
-                  className="text-lg font-medium mb-2"
-                  data-testid="text-status"
-                >
-                  {getStatusText()}
-                </p>
-                {isActivityComplete && (
-                  <p className="text-sm text-green-600 dark:text-green-400">
-                    ✓ Actividad completada
-                  </p>
-                )}
+              <div className="text-center py-6">
+                <p className="text-lg font-medium">{getStatusText()}</p>
               </div>
 
-              {/* Live Conversation Transcript */}
-              {(connectionState === "connecting" || connectionState === "active" || connectionState === "ended") && (
-                <ConversationTranscript messages={messages} connectionState={connectionState} />
+              {(connectionState === "connecting" ||
+                connectionState === "active" ||
+                connectionState === "ended") && (
+                <ConversationTranscript
+                  messages={messages}
+                  connectionState={connectionState}
+                />
               )}
 
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <div className="flex flex-col gap-3 items-center">
                 {connectionState === "idle" && (
-                  <Button
-                    onClick={startConversation}
-                    size="lg"
-                    className="gap-2"
-                    data-testid="button-start-conversation"
-                  >
-                    <Mic className="h-5 w-5" />
-                    🎤 Empezar conversación
+                  <Button onClick={startConversation} size="lg">
+                    <Mic className="mr-2 h-5 w-5" />
+                    Empezar conversación
                   </Button>
                 )}
 
@@ -246,40 +229,38 @@ export default function AIChatActivity() {
                     onClick={handleStopAndComplete}
                     size="lg"
                     variant="destructive"
-                    className="gap-2"
-                    disabled={connectionState === "connecting"}
-                    data-testid="button-end-conversation"
                   >
-                    <Square className="h-5 w-5" />
-                    ✋ Terminar conversación
+                    <Square className="mr-2 h-5 w-5" />
+                    Terminar conversación
                   </Button>
                 )}
 
-                {connectionState === "error" && (
-                  <Button
-                    onClick={startConversation}
-                    size="lg"
-                    variant="outline"
-                    className="gap-2"
-                    data-testid="button-retry"
-                  >
-                    Reintentar
-                  </Button>
-                )}
-              </div>
+                {/* 🔊 BOTONES DE PRUEBA TTS (NUEVO) */}
+                <Button
+                  variant="outline"
+                  onClick={() => speak("Hello. What is your name?")}
+                  disabled={isPlaying}
+                  className="gap-2"
+                >
+                  <Volume2 className="h-4 w-4" />
+                  Probar TTS (texto fijo)
+                </Button>
 
-              <div className="text-sm text-muted-foreground text-center">
-                <p>
-                  Practica tu conversación en inglés con un asistente de IA.
-                </p>
-                <p>Asegúrate de permitir el acceso al micrófono.</p>
+                <Button
+                  variant="outline"
+                  onClick={() => speakLessonQuestion(0)}
+                  disabled={isPlaying}
+                  className="gap-2"
+                >
+                  <Volume2 className="h-4 w-4" />
+                  Probar TTS (lesson question 0)
+                </Button>
               </div>
             </CardContent>
           </Card>
         </div>
       </main>
       <Footer />
-      <audio ref={(el) => el} data-testid="audio-remote" hidden />
     </div>
   );
 }
