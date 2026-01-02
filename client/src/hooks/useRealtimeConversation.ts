@@ -33,13 +33,21 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   /* =====================================================
       HELPER: SEND COMMAND TO AI (TITIRITERO)
   ===================================================== */
+  /* =====================================================
+      HELPER: SEND COMMAND TO AI (TITIRITERO)
+  ===================================================== */
   const forceAISpeech = (textToSay: string) => {
     if (dcRef.current?.readyState !== "open") return;
 
-    // Marcamos que la IA va a empezar a hablar
+    console.log(
+      "🚨 [TITIRITERO] Intentando forzar a la IA a decir:",
+      textToSay,
+    );
+
+    // Marcamos que la IA va a hablar (para el filtro anti-eco)
     isAiSpeakingRef.current = true;
 
-    // 1. UI Optimista
+    // 1. UI Optimista (Para que lo veas instantáneo en pantalla)
     setMessages((prev) => [
       ...prev,
       {
@@ -50,30 +58,20 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
       },
     ]);
 
-    // 2. LIMPIEZA CRÍTICA: Borramos el buffer de audio ANTES de hablar.
-    // Esto evita que escuche ecos viejos o ruidos.
+    // 2. LIMPIEZA DE BUFFER
     dcRef.current.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
 
-    // 3. Insertar en historial
-    dcRef.current.send(
-      JSON.stringify({
-        type: "conversation.item.create",
-        item: {
-          type: "message",
-          role: "assistant",
-          content: [{ type: "text", text: textToSay }],
-        },
-      }),
-    );
+    // 3. ¡ELIMINADO! Ya no enviamos "conversation.item.create" aquí.
+    // Dejamos que la IA cree el item real con el response.create.
 
-    // 4. ORDENAR HABLAR (Sin apagar VAD, solo forzando voz)
+    // 4. ORDENAR HABLAR
     dcRef.current.send(
       JSON.stringify({
         type: "response.create",
         response: {
           modalities: ["text", "audio"],
-          instructions: `SAY EXACTLY: "${textToSay}"`, // Instrucción corta y directa
-          tool_choice: "none", // <--- OBLIGA A USAR VOZ
+          instructions: `SAY EXACTLY: "${textToSay}"`,
+          tool_choice: "none", // Forzamos voz
         },
       }),
     );
@@ -149,6 +147,10 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
         // --- GESTIÓN DE ESTADO DE AUDIO ---
         // Cuando la IA empieza a hablar
         if (data.type === "response.audio.delta") {
+          if (!isAiSpeakingRef.current) {
+            console.log("🔊 [SYSTEM] Recibiendo Audio Streaming...");
+          }
+
           isAiSpeakingRef.current = true;
         }
         // Cuando la IA termina de hablar
@@ -227,7 +229,7 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
             setTimeout(() => {
               if (nextQuestion) {
-                forceAISpeech(`Good. Next: ${nextQuestion}`);
+                forceAISpeech(`${nextQuestion}`);
               } else {
                 forceAISpeech("Excellent work. Lesson finished.");
               }
