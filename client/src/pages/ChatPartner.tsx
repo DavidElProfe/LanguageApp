@@ -51,7 +51,6 @@ const LESSON_OPTIONS = [
   { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
 ];
 
-
 export default function ChatPartner() {
   const [, setLocation] = useLocation();
   const [selectedLesson, setSelectedLesson] = useState(1);
@@ -142,7 +141,6 @@ export default function ChatPartner() {
                   </SelectContent>
                 </Select>
               </div>
-
 
               {errorMessage && (
                 <div

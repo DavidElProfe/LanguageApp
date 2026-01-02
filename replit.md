@@ -144,3 +144,23 @@ This TTS implementation is designed to be used alongside or as a replacement for
 1. Import `useTTSPlayer` hook
 2. Replace `forceAISpeech(text)` calls with `speak(text)` calls
 3. The lesson logic, validation, and state machine remain unchanged
+
+## Lesson 2 Hybrid Mode (Active)
+Lesson 2 now uses a hybrid approach:
+- **Voice Output**: Deterministic TTS speaks EXACT scripted questions from `LESSON_2_VOICE_MVP_QUESTIONS`
+- **Voice Input**: Realtime API still handles speech-to-text transcription
+- **Realtime Audio**: Muted for Lesson 2 to ensure only TTS speaks
+
+### How It Works
+1. When Lesson 2 starts, TTS speaks the first scripted question
+2. User responds via voice → Realtime transcribes the speech
+3. Hook logic advances to next question
+4. TTS speaks the next exact scripted question
+5. Process repeats until all 33 questions are complete
+6. Lesson ends with "Take care!" (last scripted line)
+
+### Key Differences from Lesson 1
+- Lesson 1: Realtime handles both input AND output (may improvise)
+- Lesson 2: Realtime handles input only, TTS handles output (100% deterministic)
+
+This is a proof-of-concept to validate control and determinism before wider adoption.

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { SIMPLE_CONVERSATION_PROMPT } from "../../../server/prompts/simpleConversationPrompt";
 import { LESSON_2_VOICE_MVP_QUESTIONS } from "../../../server/prompts/lesson2VoiceMvpQuestions";
 
@@ -10,6 +10,47 @@ export interface ConversationMessage {
   role: "user" | "assistant";
   text: string;
   timestamp: number;
+}
+
+async function speakWithTTS(text: string): Promise<void> {
+  console.log(`🔊 [TTS] Speaking: "${text}"`);
+  
+  try {
+    const response = await fetch("/api/tts/speak", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text,
+        voice: "nova",
+        speed: 1.0,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`TTS request failed: ${response.statusText}`);
+    }
+
+    const audioBlob = await response.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    
+    const audio = new Audio(audioUrl);
+    
+    return new Promise((resolve, reject) => {
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+        console.log(`✅ [TTS] Finished speaking: "${text.substring(0, 30)}..."`);
+        resolve();
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(audioUrl);
+        reject(new Error("Audio playback failed"));
+      };
+      audio.play().catch(reject);
+    });
+  } catch (error) {
+    console.error("❌ [TTS] Error:", error);
+    throw error;
+  }
 }
 
 export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
@@ -28,19 +69,18 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
   const sessionIdRef = useRef<string | null>(null);
 
   const isProcessingRef = useRef<boolean>(false);
+  const isTTSSpeakingRef = useRef<boolean>(false);
 
   /* =====================================================
-      HELPER: FORCE AI SPEECH (TITIRITERO)
+      HELPER: FORCE AI SPEECH (TITIRITERO) - LESSON 1 ONLY
   ===================================================== */
   const forceAISpeech = (textToSay: string) => {
     if (!dcRef.current || dcRef.current.readyState !== "open") return;
 
     console.log(`🔵 [TITIRITERO] Ordenando: "${textToSay}"`);
 
-    // Limpiamos buffer por seguridad
     dcRef.current.send(JSON.stringify({ type: "input_audio_buffer.clear" }));
 
-    // Mandamos la orden estricta
     dcRef.current.send(
       JSON.stringify({
         type: "response.create",
@@ -52,6 +92,36 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
       }),
     );
   };
+
+  /* =====================================================
+      HELPER: SPEAK WITH TTS - LESSON 2 ONLY (HYBRID MODE)
+  ===================================================== */
+  const speakLesson2TTS = useCallback(async (text: string) => {
+    if (isTTSSpeakingRef.current) {
+      console.log("⏳ [TTS] Already speaking, skipping...");
+      return;
+    }
+
+    isTTSSpeakingRef.current = true;
+
+    setMessages((m) => [
+      ...m,
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        text: text,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    try {
+      await speakWithTTS(text);
+    } catch (error) {
+      console.error("❌ [TTS] Speech failed:", error);
+    } finally {
+      isTTSSpeakingRef.current = false;
+    }
+  }, []);
 
   const startConversation = async () => {
     try {
@@ -68,6 +138,17 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
 
       const audio = document.createElement("audio");
       audio.autoplay = true;
+      
+      // =====================================================
+      // LESSON 2 HYBRID: Mute Realtime audio output
+      // We still need the audio element for WebRTC to work,
+      // but we mute it so TTS can be the only voice output
+      // =====================================================
+      if (lesson === 2) {
+        audio.muted = true;
+        console.log("🔇 [HYBRID] Lesson 2: Realtime audio MUTED (TTS will be used)");
+      }
+      
       document.body.appendChild(audio);
       audioRef.current = audio;
 
@@ -99,16 +180,17 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
         }
 
         if (lesson === 2) {
-          // CONFIGURACIÓN INICIAL DRILL
+          // =====================================================
+          // LESSON 2 HYBRID: Configure Realtime as listener only
+          // =====================================================
           currentQuestionIndexRef.current = 0;
 
-          // Configuramos para que sepa que es un robot, aunque el "reflejo" siga vivo
           dc.send(
             JSON.stringify({
               type: "session.update",
               session: {
                 instructions:
-                  "System: You are a passive reading engine. Wait for commands.",
+                  "System: You are a passive speech-to-text engine. Listen to user speech and transcribe it. Do NOT generate any spoken responses. Do NOT speak at all. Just listen and transcribe.",
                 tool_choice: "none",
                 temperature: 0.6,
               },
@@ -116,8 +198,10 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           );
 
           const firstQuestion = LESSON_2_VOICE_MVP_QUESTIONS[0];
+          console.log(`🎯 [HYBRID] Lesson 2 starting with TTS: "${firstQuestion}"`);
+          
           setTimeout(() => {
-            forceAISpeech(firstQuestion);
+            speakLesson2TTS(firstQuestion);
           }, 500);
         }
       };
@@ -130,24 +214,24 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           return;
         }
 
-        // ==========================================================
-        // 🔪 EL ASESINO DE REFLEJOS (SOLUCIÓN A "DOS LÓGICAS")
-        // ==========================================================
-        // Cuando detectamos que el usuario dejó de hablar, la IA automáticamente
-        // intentará responder. AQUÍ LA MATAMOS antes de que empiece.
-        if (data.type === "input_audio_buffer.speech_stopped") {
-          if (lesson === 2) {
-            console.log(
-              "🤫 [SILENCIADOR] Speech stopped -> Cancelando respuesta automática.",
-            );
+        // =====================================================
+        // LESSON 2 HYBRID: Cancel ALL Realtime voice responses
+        // =====================================================
+        if (lesson === 2) {
+          if (data.type === "input_audio_buffer.speech_stopped") {
+            console.log("🤫 [HYBRID] Speech stopped -> Canceling any Realtime response");
+            dc.send(JSON.stringify({ type: "response.cancel" }));
+          }
+
+          if (data.type === "response.created") {
+            console.log("🚫 [HYBRID] Realtime tried to respond -> Canceling immediately");
             dc.send(JSON.stringify({ type: "response.cancel" }));
           }
         }
 
         // ==========================================================
-        // 🧠 EL CEREBRO TITIRITERO (TU LÓGICA)
+        // TRANSCRIPTION HANDLER (works for both lessons)
         // ==========================================================
-        // Usamos la transcripción para decidir nosotros qué sigue.
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
@@ -156,7 +240,13 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           if (!userText) return;
 
           if (lesson === 2) {
-            // Filtro Eco
+            // Skip if TTS is currently speaking (echo filter)
+            if (isTTSSpeakingRef.current) {
+              console.log("🛡️ [HYBRID] Ignoring input while TTS speaking");
+              return;
+            }
+
+            // Echo filter: ignore if user text matches current question
             const currentQ =
               LESSON_2_VOICE_MVP_QUESTIONS[currentQuestionIndexRef.current];
             if (
@@ -165,6 +255,7 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
                 .toLowerCase()
                 .includes(currentQ.toLowerCase().substring(0, 15))
             ) {
+              console.log("🛡️ [HYBRID] Echo detected, ignoring");
               return;
             }
 
@@ -182,21 +273,23 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
               },
             ]);
 
-            // Avanzamos
+            // Advance to next question
             const nextIndex = currentQuestionIndexRef.current + 1;
             currentQuestionIndexRef.current = nextIndex;
             const nextQuestion = LESSON_2_VOICE_MVP_QUESTIONS[nextIndex];
 
-            // Esperamos un poquito para que sea natural
+            // Small delay for natural conversation feel
             setTimeout(() => {
               isProcessingRef.current = false;
               if (nextQuestion) {
-                forceAISpeech(`Good. Next: ${nextQuestion}`);
-              } else {
-                forceAISpeech("Excellent work. Lesson finished.");
+                // Speak the EXACT scripted question - no extra words
+                speakLesson2TTS(nextQuestion);
               }
+              // If no next question, lesson is complete - "Take care!" was the last spoken line
+              // No additional speech needed - conversation ends naturally
             }, 500);
           } else {
+            // Lesson 1: Just add to messages, Realtime handles the rest
             setMessages((m) => [
               ...m,
               {
@@ -209,9 +302,9 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
           }
         }
 
-        if (data.type === "response.audio_transcript.done") {
+        // Lesson 1: Show AI responses in transcript
+        if (lesson === 1 && data.type === "response.audio_transcript.done") {
           const aiText = data.transcript;
-          // Solo mostramos si no está vacía (a veces el cancel genera strings vacíos)
           if (aiText && aiText.trim() !== "") {
             setMessages((m) => [
               ...m,
@@ -258,6 +351,14 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
     setConnectionState("ended");
   };
 
+  const requestSessionRecap = () => {
+    // For Lesson 2, don't add extra speech - the script ends with "Take care!"
+    // For Lesson 1, provide a friendly closing via Realtime
+    if (lesson !== 2) {
+      forceAISpeech("Great job today! Keep practicing to improve your English.");
+    }
+  };
+
   return {
     connectionState,
     errorMessage,
@@ -266,5 +367,6 @@ export function useRealtimeConversation({ lesson = 1, part = 1 } = {}) {
     currentStep,
     startConversation,
     stopConversation,
+    requestSessionRecap,
   };
 }
