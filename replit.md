@@ -103,3 +103,44 @@ The UI is exclusively in Spanish, with a dark mode option and theme persistence.
     - Embedded flashcard sets within `QuizletActivity` components
 - **OpenAI**:
     - Realtime API for AI Voice Conversation (Assistant asst_uoHk8D6G4ZPtYrb6lwueR0uh)
+    - Text-to-Speech API (POC for deterministic voice output)
+
+## TTS Proof-of-Concept (Experimental)
+A minimal, isolated Text-to-Speech implementation has been added to experiment with deterministic voice output as an alternative to Realtime Voice (which may improvise). This does NOT replace or modify the existing Realtime Voice logic.
+
+### TTS Architecture
+- **Server Helper**: `server/utils/ttsHelper.ts` - Core TTS functions using OpenAI's `gpt-4o-mini-tts` model
+- **API Routes**: `server/ttsRoutes.ts` - REST endpoints for TTS generation
+- **Client Hook**: `client/src/hooks/useTTSPlayer.ts` - React hook for playing TTS audio
+
+### TTS API Endpoints
+- `POST /api/tts/speak` - Generate speech from any text
+  - Body: `{ text: string, voice?: string, speed?: number }`
+  - Returns: MP3 audio buffer
+- `GET /api/tts/speak-stream` - Stream speech audio
+  - Query params: `text`, `voice`, `speed`
+- `GET /api/tts/lesson-question/:index` - Speak a specific lesson question by index
+  - Returns: MP3 audio with X-Question-Text header
+- `GET /api/tts/questions-list` - List all available lesson questions
+
+### TTS Voices Available
+alloy, echo, fable, onyx, nova (default), shimmer, coral, sage
+
+### Usage Example (Client)
+```typescript
+import { useTTSPlayer } from "@/hooks/useTTSPlayer";
+
+const { speak, speakLessonQuestion, isPlaying, stop } = useTTSPlayer();
+
+// Speak custom text
+await speak("Hello, how are you?", { voice: "nova", speed: 1.0 });
+
+// Speak a lesson question by index
+await speakLessonQuestion(0); // "What is your name?"
+```
+
+### Toggle TTS vs Realtime
+This TTS implementation is designed to be used alongside or as a replacement for `forceAISpeech` in `useRealtimeConversation.ts`. To toggle:
+1. Import `useTTSPlayer` hook
+2. Replace `forceAISpeech(text)` calls with `speak(text)` calls
+3. The lesson logic, validation, and state machine remain unchanged
