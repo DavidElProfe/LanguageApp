@@ -1,15 +1,14 @@
 async function getAuthHeaders() {
   try {
-    // Wait for Supabase client initialization
     if (globalThis.__supabaseInitPromise) {
       await globalThis.__supabaseInitPromise;
     }
-    
+
     const client = globalThis.__supabaseClient;
     if (!client || !client.auth) {
       return { 'Content-Type': 'application/json' };
     }
-    
+
     const { data: { session } } = await client.auth.getSession();
     return {
       'Content-Type': 'application/json',
@@ -39,7 +38,6 @@ export async function apiRequest(url: string, options: RequestInit = {}) {
   return response.json();
 }
 
-// Level APIs
 export const levelApi = {
   getAll: () => apiRequest('/api/levels'),
   getByTrack: (track: string) => apiRequest(`/api/levels?track=${track}`),
@@ -49,7 +47,6 @@ export const levelApi = {
   delete: (id: string) => apiRequest(`/api/levels/${id}`, { method: 'DELETE' }),
 };
 
-// Progress APIs
 export const progressApi = {
   getAll: () => apiRequest('/api/progress'),
   getByTrack: (track: string) => apiRequest(`/api/progress?track=${track}`),
@@ -58,25 +55,36 @@ export const progressApi = {
   create: (data: any) => apiRequest('/api/progress', { method: 'POST', body: JSON.stringify(data) }),
 };
 
-// Dashboard APIs
 export const dashboardApi = {
   getStats: () => apiRequest('/api/dashboard/stats'),
   getNextTopic: () => apiRequest('/api/dashboard/next-topic'),
 };
 
-// Profile APIs
 export const profileApi = {
   get: () => apiRequest('/api/profile'),
   update: (data: any) => apiRequest('/api/profile', { method: 'PATCH', body: JSON.stringify(data) }),
 };
 
-// Waitlist API
 export const waitlistApi = {
   add: (email: string) => apiRequest('/api/waitlist', { method: 'POST', body: JSON.stringify({ email }) }),
 };
 
-// AI Chat API
 export const aiApi = {
-  chat: (messages: { role: 'system' | 'user' | 'assistant'; content: string }[], context: any) =>
-    apiRequest('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, context }) }),
+  chat: (messages: { role: 'system' | 'user' | 'assistant'; content: string }[], context: any, sessionId?: string, userMessage?: string) =>
+    apiRequest('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, context, sessionId, userMessage }) }),
+
+  chatPipeline: (
+    userMessage: string, 
+    sessionId: string, 
+    history: { role: string; content: string }[], 
+    context: { courseId: string; topicId: string }
+  ) => apiRequest('/api/ai/chat/pipeline', { 
+    method: 'POST', 
+    body: JSON.stringify({ 
+      userMessage, 
+      sessionId, 
+      messages: history, 
+      context 
+    }) 
+  }),
 };
