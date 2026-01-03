@@ -3,8 +3,11 @@ import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
+  MessageSquare,
   ArrowLeft,
   Loader2,
+  Eye,
+  EyeOff,
   Mic,
   LogOut,
 } from "lucide-react";
@@ -16,8 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
-import { useLesson1Conversation } from "@/hooks/useLesson1Conversation";
-import { useLesson2Drill } from "@/hooks/useLesson2Drill";
+import { useRealtimeConversation } from "@/hooks/useRealtimeConversation";
 import ConversationTranscript from "@/components/ConversationTranscript";
 
 const LESSON_OPTIONS = [
@@ -49,27 +51,22 @@ const LESSON_OPTIONS = [
   { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
 ];
 
-export default function VoiceChat() {
+export default function ChatPartner() {
   const [, setLocation] = useLocation();
   const [selectedLesson, setSelectedLesson] = useState(1);
-  const [showDebugChat] = useState(true);
+  const [showDebugChat, setShowDebugChat] = useState(true);
   const [recapRequested, setRecapRequested] = useState(false);
 
-  const lesson1 = useLesson1Conversation();
-  const lesson2 = useLesson2Drill();
-
-  const activeHook = selectedLesson === 2 ? lesson2 : lesson1;
   const {
     connectionState,
     errorMessage,
     messages,
+    currentLesson,
+    currentStep,
     startConversation,
     stopConversation,
-  } = activeHook;
-
-  const requestSessionRecap = selectedLesson === 1 && 'requestSessionRecap' in lesson1 
-    ? lesson1.requestSessionRecap 
-    : () => {};
+    requestSessionRecap,
+  } = useRealtimeConversation({ lesson: selectedLesson, part: 1 });
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -110,6 +107,7 @@ export default function VoiceChat() {
                 </ul>
               </div>
 
+              {/* Lesson Selector */}
               <div className="space-y-2">
                 <label htmlFor="lesson-select" className="text-sm font-medium">
                   Selecciona la lección que quieres practicar:
@@ -153,6 +151,7 @@ export default function VoiceChat() {
                 </div>
               )}
 
+              {/* Debug mode: Show text transcription only when enabled */}
               {showDebugChat &&
                 (connectionState === "connecting" ||
                   connectionState === "active" ||
@@ -189,6 +188,7 @@ export default function VoiceChat() {
 
               {connectionState === "active" && (
                 <div className="space-y-4">
+                  {/* Voice-only indicator - shown when debug mode is off */}
                   {!showDebugChat && (
                     <div
                       className="bg-gradient-to-r from-primary/20 to-primary/10 border border-primary/30 rounded-xl p-8 text-center"
@@ -213,6 +213,7 @@ export default function VoiceChat() {
                     </div>
                   )}
 
+                  {/* Active conversation indicator - shown when debug mode is on */}
                   {showDebugChat && (
                     <div
                       className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center"
@@ -228,8 +229,8 @@ export default function VoiceChat() {
                         className="text-xs text-primary font-medium"
                         data-testid="text-active-lesson"
                       >
-                        {LESSON_OPTIONS.find((o) => o.value === selectedLesson)
-                          ?.label || `Lección ${selectedLesson}`}
+                        {LESSON_OPTIONS.find((o) => o.value === currentLesson)
+                          ?.label || `Lección ${currentLesson}`}
                       </p>
                     </div>
                   )}
