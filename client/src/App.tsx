@@ -16,6 +16,7 @@ import TopicFlashcards from "@/pages/TopicFlashcards";
 import AIChatActivity from "@/pages/AIChatActivity";
 
 import SimpleMode from "@/pages/SimpleMode";
+import VoiceChat from "@/pages/VoiceChat";
 import TopicRedirect from "@/pages/TopicRedirect";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
@@ -77,6 +78,11 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/admin" component={Admin} />
+      <Route path="/voice-chat">
+        <ProtectedRoute>
+          <VoiceChat />
+        </ProtectedRoute>
+      </Route>
       <Route path="/simple">
         <ProtectedRoute>
           <SimpleMode />
