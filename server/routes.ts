@@ -12,6 +12,7 @@ import { desc } from "drizzle-orm";
 import { z } from "zod";
 import { assistantRouter } from "./assistantRoutes";
 import { ttsRouter } from "./ttsRoutes";
+import { analysisRouter } from "./agents/analysisRoutes";
 import { estimateSessionCost, logSessionCost } from "./utils/costEstimator";
 import {
   runLessonPipeline,
@@ -923,6 +924,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use("/api/assistant", assistantRouter);
   app.use("/api/tts", ttsRouter);
+  app.use("/api/analysis", analysisRouter);
 
   const httpServer = createServer(app);
   return httpServer;

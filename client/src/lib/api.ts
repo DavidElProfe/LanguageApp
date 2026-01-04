@@ -115,4 +115,24 @@ export const aiApi = {
         context,
       }),
     }),
+
+  evaluateResponse: (data: {
+    transcription: string;
+    currentQuestion: string;
+    questionIndex: number;
+    sessionId: string;
+    lessonNumber?: number;
+    includeDebug?: boolean;
+  }) =>
+    apiRequest("/api/analysis/evaluate", {
+      method: "POST",
+      body: JSON.stringify({
+        transcription: data.transcription,
+        currentQuestion: data.currentQuestion,
+        questionIndex: data.questionIndex,
+        sessionId: data.sessionId,
+        lessonNumber: data.lessonNumber || 2,
+        includeDebug: data.includeDebug || false,
+      }),
+    }),
 };
