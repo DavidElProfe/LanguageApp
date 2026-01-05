@@ -11,33 +11,14 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
-async function speakWithTTS(text: string) {
-  if (!text) return;
-  console.log(`[L1 TTS] Speaking: "${text}"`);
-  const response = await fetch("/api/tts/speak", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
-  });
-  if (!response.ok) throw new Error("TTS Failed");
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  return new Promise<void>((resolve) => {
-    audio.onended = () => {
-      resolve();
-      URL.revokeObjectURL(url);
-    };
-    audio.play();
-  });
-}
+// CACHÉ GLOBAL
+const audioCache = new Map<number, Blob>();
 
 export function useLesson1Drill() {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  // Estado para la burbuja de "Pensando..."
   const [isThinking, setIsThinking] = useState(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -51,40 +32,121 @@ export function useLesson1Drill() {
   const isTTSSpeakingRef = useRef<boolean>(false);
   const sessionIdRef = useRef<string | null>(null);
 
+  // CRONÓMETRO DE DEBUG
+  const timingRef = useRef<{ stopSpeaking: number }>({ stopSpeaking: 0 });
+
   const addMessage = (role: "user" | "assistant", text: string) => {
-    const newMsg: ConversationMessage = {
-      id: crypto.randomUUID(),
-      role,
-      text,
-      timestamp: Date.now(),
-    };
-    messagesRef.current = [...messagesRef.current, newMsg];
-    setMessages((prev) => [...prev, newMsg]);
+    setMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), role, text, timestamp: Date.now() },
+    ]);
   };
 
-  const speakText = useCallback(async (text: string) => {
-    if (isTTSSpeakingRef.current) return;
+  const playAudioBlob = (blob: Blob, label: string): Promise<void> => {
+    const startPlay = performance.now();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    return new Promise<void>((resolve) => {
+      audio.onended = () => {
+        resolve();
+        URL.revokeObjectURL(url);
+      };
+      audio.onplay = () => {
+        console.log(
+          `🔊 [AUDIO PLAY] ${label} started. Latency from play call: ${(performance.now() - startPlay).toFixed(0)}ms`,
+        );
+      };
+      audio.play().catch((e) => console.error("Error playing audio:", e));
+    });
+  };
 
+  const speakDynamicText = async (text: string) => {
+    if (isTTSSpeakingRef.current) return;
     addMessage("assistant", text);
     isTTSSpeakingRef.current = true;
     try {
-      await speakWithTTS(text);
+      const t0 = performance.now();
+      console.log(`REQUESTING DYNAMIC TTS...`);
+      const response = await fetch("/api/tts/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
+      });
+      const t1 = performance.now();
+      console.log(`⬇️ [TTS DOWNLOAD] Took ${(t1 - t0).toFixed(0)}ms`);
+
+      const blob = await response.blob();
+      await playAudioBlob(blob, "Dynamic Feedback");
     } catch (e) {
       console.error(e);
     } finally {
       isTTSSpeakingRef.current = false;
     }
-  }, []);
+  };
+
+  const speakQuestionByIndex = async (index: number) => {
+    if (isTTSSpeakingRef.current) return;
+    const text = LESSON_1_QUESTIONS[index];
+    if (!text) return;
+
+    addMessage("assistant", text);
+    isTTSSpeakingRef.current = true;
+
+    try {
+      let blob = audioCache.get(index);
+      if (blob) {
+        console.log(`⚡ [CACHE HIT] Q${index} ready immediately.`);
+        await playAudioBlob(blob, `Question ${index}`);
+      } else {
+        console.log(`🐢 [CACHE MISS] Downloading Q${index}...`);
+        const t0 = performance.now();
+        const response = await fetch("/api/tts/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
+        });
+        const t1 = performance.now();
+        console.log(`⬇️ [TTS DOWNLOAD] Took ${(t1 - t0).toFixed(0)}ms`);
+        blob = await response.blob();
+        audioCache.set(index, blob);
+        await playAudioBlob(blob, `Question ${index}`);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      isTTSSpeakingRef.current = false;
+    }
+  };
+
+  const prefetchNextQuestion = async (currentIndex: number) => {
+    const nextIdx = currentIndex + 1;
+    if (nextIdx >= LESSON_1_QUESTIONS.length || audioCache.has(nextIdx)) return;
+
+    console.log(`🚀 [PREFETCH START] Q${nextIdx}`);
+    try {
+      const text = LESSON_1_QUESTIONS[nextIdx];
+      await fetch("/api/tts/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
+      })
+        .then((res) => res.blob())
+        .then((blob) => {
+          audioCache.set(nextIdx, blob);
+          console.log(`🏁 [PREFETCH DONE] Q${nextIdx} cached.`);
+        });
+    } catch (e) {
+      console.warn(e);
+    }
+  };
 
   const startConversation = async () => {
     try {
       setConnectionState("connecting");
       setMessages([]);
-      messagesRef.current = [];
-      currentQuestionIndexRef.current = 0;
       setIsThinking(false);
+      audioCache.clear();
 
-      // Solicitamos sesión especificando lesson=1
       const tokenRes = await fetch(`/api/assistant/simple-session?lesson=1`);
       const response = await tokenRes.json();
       sessionIdRef.current = response.sessionId;
@@ -99,9 +161,7 @@ export function useLesson1Drill() {
       audioRef.current = audio;
 
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
@@ -109,9 +169,7 @@ export function useLesson1Drill() {
       dcRef.current = dc;
 
       dc.onopen = () => {
-        console.log("[L1] Drill Started");
         setConnectionState("active");
-
         dc.send(
           JSON.stringify({
             type: "session.update",
@@ -123,11 +181,10 @@ export function useLesson1Drill() {
             },
           }),
         );
-
-        const firstQ = LESSON_1_QUESTIONS[0];
-        if (firstQ) {
-          setTimeout(() => speakText(firstQ), 500);
-        }
+        setTimeout(() => {
+          speakQuestionByIndex(0);
+          prefetchNextQuestion(0);
+        }, 500);
       };
 
       dc.onmessage = async (event) => {
@@ -138,10 +195,15 @@ export function useLesson1Drill() {
           return;
         }
 
-        if (
-          data.type === "input_audio_buffer.speech_stopped" ||
-          data.type === "response.created"
-        ) {
+        if (data.type === "input_audio_buffer.speech_started") {
+          console.log("🎤 [USER START SPEAKING]");
+          prefetchNextQuestion(currentQuestionIndexRef.current);
+          return;
+        }
+
+        if (data.type === "input_audio_buffer.speech_stopped") {
+          timingRef.current.stopSpeaking = performance.now();
+          console.log("🛑 [USER STOP SPEAKING] Waiting for transcript...");
           dc.send(JSON.stringify({ type: "response.cancel" }));
         }
 
@@ -149,72 +211,67 @@ export function useLesson1Drill() {
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
           const userText = data.transcript.trim();
+          const tTranscript = performance.now();
+          console.log(
+            `📝 [TRANSCRIPT READY] "${userText}" (+${(tTranscript - timingRef.current.stopSpeaking).toFixed(0)}ms from stop)`,
+          );
 
           if (!userText || isTTSSpeakingRef.current || isProcessingRef.current)
             return;
 
           const currentQ = LESSON_1_QUESTIONS[currentQuestionIndexRef.current];
-
-          // Evitamos procesar si el usuario repite la pregunta (opcional)
           if (
             currentQ &&
             userText
               .toLowerCase()
               .includes(currentQ.toLowerCase().substring(0, 15))
-          ) {
+          )
             return;
-          }
 
-          console.log(`[User Answer L1] ${userText}`);
           isProcessingRef.current = true;
           addMessage("user", userText);
-
-          // Encendemos el indicador de "Pensando"
           setIsThinking(true);
 
           try {
-            // Evaluamos con nuestros Agentes (Backend)
+            console.log("🧠 [AGENTS START] Sending to backend...");
+            const tStartAnalysis = performance.now();
+
             const analysisResult = await aiApi.evaluateResponse({
               transcription: userText,
               currentQuestion: currentQ || "",
               questionIndex: currentQuestionIndexRef.current,
               sessionId: sessionIdRef.current || "unknown",
-              lessonNumber: 1, // <--- Importante: lesson 1
+              lessonNumber: 1,
             });
 
+            const tEndAnalysis = performance.now();
             console.log(
-              `[Analysis L1] decision=${analysisResult.decision}, advance=${analysisResult.shouldAdvance}`,
+              `🧠 [AGENTS END] Took ${(tEndAnalysis - tStartAnalysis).toFixed(0)}ms`,
             );
 
             if (analysisResult.tutorInstruction) {
-              await speakText(analysisResult.tutorInstruction);
+              console.log("🗣️ [FEEDBACK] Playing correction...");
+              await speakDynamicText(analysisResult.tutorInstruction);
             }
 
             if (analysisResult.shouldAdvance) {
               const nextIdx = currentQuestionIndexRef.current + 1;
               if (nextIdx < LESSON_1_QUESTIONS.length) {
                 currentQuestionIndexRef.current = nextIdx;
-                const nextQ = LESSON_1_QUESTIONS[nextIdx];
-                setTimeout(() => speakText(nextQ), 500);
+                console.log("⏩ [ADVANCE] Playing next question...");
+                await speakQuestionByIndex(nextIdx);
               } else {
-                await speakText("¡Felicidades! Has completado la Lección 1.");
                 stopConversation();
               }
-            } else {
-              console.log("[Analysis] Staying on same question (retry)");
             }
           } catch (error) {
             console.error("Analysis Error:", error);
-            // Fallback simple por si explota el backend: avanza a la siguiente
-            const nextIdx = currentQuestionIndexRef.current + 1;
-            if (nextIdx < LESSON_1_QUESTIONS.length) {
-              currentQuestionIndexRef.current = nextIdx;
-              speakText(LESSON_1_QUESTIONS[nextIdx]);
-            }
           } finally {
             isProcessingRef.current = false;
-            // Apagamos el indicador
             setIsThinking(false);
+            console.log(
+              `🏁 [TURN COMPLETED] Total time: ${(performance.now() - timingRef.current.stopSpeaking).toFixed(0)}ms`,
+            );
           }
         }
       };
@@ -239,9 +296,7 @@ export function useLesson1Drill() {
       });
     } catch (err) {
       console.error(err);
-      setErrorMessage("Error al iniciar");
       setConnectionState("error");
-      setIsThinking(false);
     }
   };
 

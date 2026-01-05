@@ -44,6 +44,7 @@ Respond with valid JSON only.`,
         ],
         temperature: 0.3,
         response_format: { type: "json_object" },
+        max_tokens: 150,
       });
 
       const content = response.choices[0]?.message?.content;

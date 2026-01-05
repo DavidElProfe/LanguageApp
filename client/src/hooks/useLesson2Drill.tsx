@@ -11,34 +11,14 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
-async function speakWithTTS(text: string) {
-  if (!text) return;
-  console.log(`[L2 TTS] Speaking: "${text}"`);
-  const response = await fetch("/api/tts/speak", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
-  });
-  if (!response.ok) throw new Error("TTS Failed");
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const audio = new Audio(url);
-  return new Promise<void>((resolve) => {
-    audio.onended = () => {
-      resolve();
-      URL.revokeObjectURL(url);
-    };
-    audio.play();
-  });
-}
+// 🚀 CACHÉ GLOBAL (Persiste entre renderizados)
+const audioCache = new Map<number, Blob>();
 
 export function useLesson2Drill({ part = 1 } = {}) {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
-
-  // NUEVO ESTADO: Para indicar visualmente que los agentes están "pensando"
   const [isThinking, setIsThinking] = useState(false);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
@@ -52,6 +32,9 @@ export function useLesson2Drill({ part = 1 } = {}) {
   const isTTSSpeakingRef = useRef<boolean>(false);
   const sessionIdRef = useRef<string | null>(null);
 
+  // CRONÓMETRO DE DEBUG
+  const timingRef = useRef<{ stopSpeaking: number }>({ stopSpeaking: 0 });
+
   const addMessage = (role: "user" | "assistant", text: string) => {
     const newMsg: ConversationMessage = {
       id: crypto.randomUUID(),
@@ -63,19 +46,118 @@ export function useLesson2Drill({ part = 1 } = {}) {
     setMessages((prev) => [...prev, newMsg]);
   };
 
-  const speakText = useCallback(async (text: string) => {
-    if (isTTSSpeakingRef.current) return;
+  // --- LÓGICA DE AUDIO OPTIMIZADA ---
 
+  const playAudioBlob = (blob: Blob, label: string): Promise<void> => {
+    const startPlay = performance.now();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    return new Promise<void>((resolve) => {
+      audio.onended = () => {
+        resolve();
+        URL.revokeObjectURL(url);
+      };
+      audio.onplay = () => {
+        console.log(
+          `🔊 [AUDIO PLAY] ${label} started. Latency from play call: ${(performance.now() - startPlay).toFixed(0)}ms`,
+        );
+      };
+      audio.play().catch((e) => console.error("Error playing audio:", e));
+    });
+  };
+
+  // 1. Hablar Feedback Dinámico (No cacheable)
+  const speakDynamicText = async (text: string) => {
+    if (isTTSSpeakingRef.current) return;
     addMessage("assistant", text);
     isTTSSpeakingRef.current = true;
     try {
-      await speakWithTTS(text);
+      const t0 = performance.now();
+      const response = await fetch("/api/tts/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
+      });
+      const t1 = performance.now();
+      console.log(`⬇️ [TTS DOWNLOAD] Feedback took ${(t1 - t0).toFixed(0)}ms`);
+
+      if (!response.ok) throw new Error("TTS Failed");
+      const blob = await response.blob();
+      await playAudioBlob(blob, "Dynamic Feedback");
     } catch (e) {
       console.error(e);
     } finally {
       isTTSSpeakingRef.current = false;
     }
-  }, []);
+  };
+
+  // 2. Hablar Pregunta (Cacheable)
+  const speakQuestionByIndex = async (index: number) => {
+    if (isTTSSpeakingRef.current) return;
+    const text = LESSON_2_VOICE_MVP_QUESTIONS[index];
+    if (!text) return;
+
+    addMessage("assistant", text);
+    isTTSSpeakingRef.current = true;
+
+    try {
+      let blob = audioCache.get(index);
+      if (blob) {
+        console.log(`⚡ [CACHE HIT] Q${index} ready immediately.`);
+        await playAudioBlob(blob, `Question ${index}`);
+      } else {
+        console.log(`🐢 [CACHE MISS] Downloading Q${index}...`);
+        const t0 = performance.now();
+        const response = await fetch("/api/tts/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
+        });
+        const t1 = performance.now();
+        console.log(
+          `⬇️ [TTS DOWNLOAD] Q${index} took ${(t1 - t0).toFixed(0)}ms`,
+        );
+
+        if (!response.ok) throw new Error("TTS Failed");
+        blob = await response.blob();
+        audioCache.set(index, blob);
+        await playAudioBlob(blob, `Question ${index}`);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      isTTSSpeakingRef.current = false;
+    }
+  };
+
+  // 3. Pre-fetch (Segundo plano)
+  const prefetchNextQuestion = async (currentIndex: number) => {
+    const nextIdx = currentIndex + 1;
+    if (
+      nextIdx >= LESSON_2_VOICE_MVP_QUESTIONS.length ||
+      audioCache.has(nextIdx)
+    )
+      return;
+
+    console.log(`🚀 [PREFETCH START] Q${nextIdx}`);
+    try {
+      const text = LESSON_2_VOICE_MVP_QUESTIONS[nextIdx];
+      const response = await fetch("/api/tts/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
+      });
+      if (response.ok) {
+        const blob = await response.blob();
+        audioCache.set(nextIdx, blob);
+        console.log(`🏁 [PREFETCH DONE] Q${nextIdx} cached.`);
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  // --- FIN LÓGICA AUDIO ---
 
   const startConversation = async () => {
     try {
@@ -84,7 +166,9 @@ export function useLesson2Drill({ part = 1 } = {}) {
       messagesRef.current = [];
       currentQuestionIndexRef.current = 0;
       setIsThinking(false);
+      audioCache.clear(); // Limpiamos caché por seguridad al iniciar
 
+      // Pedimos sesión para Lesson 2
       const tokenRes = await fetch(
         `/api/assistant/simple-session?lesson=2&part=${part}`,
       );
@@ -111,7 +195,7 @@ export function useLesson2Drill({ part = 1 } = {}) {
       dcRef.current = dc;
 
       dc.onopen = () => {
-        console.log("[L2] Drill with Analysis Pipeline Started");
+        console.log("[L2] Drill Started");
         setConnectionState("active");
 
         dc.send(
@@ -126,9 +210,13 @@ export function useLesson2Drill({ part = 1 } = {}) {
           }),
         );
 
+        // Iniciar flujo: Hablar Q0 y bajar Q1
         const firstQ = LESSON_2_VOICE_MVP_QUESTIONS[0];
         if (firstQ) {
-          setTimeout(() => speakText(firstQ), 500);
+          setTimeout(() => {
+            speakQuestionByIndex(0);
+            prefetchNextQuestion(0);
+          }, 500);
         }
       };
 
@@ -140,10 +228,16 @@ export function useLesson2Drill({ part = 1 } = {}) {
           return;
         }
 
-        if (
-          data.type === "input_audio_buffer.speech_stopped" ||
-          data.type === "response.created"
-        ) {
+        // 1. EVENTO CLAVE: Usuario empieza a hablar -> Disparar prefetch
+        if (data.type === "input_audio_buffer.speech_started") {
+          console.log("🎤 [USER START SPEAKING]");
+          prefetchNextQuestion(currentQuestionIndexRef.current);
+          return;
+        }
+
+        if (data.type === "input_audio_buffer.speech_stopped") {
+          timingRef.current.stopSpeaking = performance.now();
+          console.log("🛑 [USER STOP SPEAKING]");
           dc.send(JSON.stringify({ type: "response.cancel" }));
         }
 
@@ -151,6 +245,10 @@ export function useLesson2Drill({ part = 1 } = {}) {
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
           const userText = data.transcript.trim();
+          const tTranscript = performance.now();
+          console.log(
+            `📝 [TRANSCRIPT] "${userText}" (+${(tTranscript - timingRef.current.stopSpeaking).toFixed(0)}ms)`,
+          );
 
           if (!userText || isTTSSpeakingRef.current || isProcessingRef.current)
             return;
@@ -166,14 +264,14 @@ export function useLesson2Drill({ part = 1 } = {}) {
             return;
           }
 
-          console.log(`[User Answer] ${userText}`);
           isProcessingRef.current = true;
           addMessage("user", userText);
-
-          // ACTIVAR ESTADO DE PENSANDO (UI Feedback)
           setIsThinking(true);
 
           try {
+            console.log("🧠 [AGENTS] Analyzing...");
+            const tStartAnalysis = performance.now();
+
             const analysisResult = await aiApi.evaluateResponse({
               transcription: userText,
               currentQuestion: currentQ || "",
@@ -183,36 +281,40 @@ export function useLesson2Drill({ part = 1 } = {}) {
             });
 
             console.log(
-              `[Analysis] decision=${analysisResult.decision}, shouldAdvance=${analysisResult.shouldAdvance}`,
+              `🧠 [AGENTS DONE] Took ${(performance.now() - tStartAnalysis).toFixed(0)}ms`,
             );
 
+            // Si hay instrucción (feedback/corrección), la decimos.
+            // NOTA: Si es correcta, el backend devuelve "" (vacío), así que esto se salta.
             if (analysisResult.tutorInstruction) {
-              await speakText(analysisResult.tutorInstruction);
+              await speakDynamicText(analysisResult.tutorInstruction);
             }
 
             if (analysisResult.shouldAdvance) {
               const nextIdx = currentQuestionIndexRef.current + 1;
               if (nextIdx < LESSON_2_VOICE_MVP_QUESTIONS.length) {
                 currentQuestionIndexRef.current = nextIdx;
-                const nextQ = LESSON_2_VOICE_MVP_QUESTIONS[nextIdx];
-                setTimeout(() => speakText(nextQ), 500);
+                // Reproducir desde caché (instantáneo)
+                await speakQuestionByIndex(nextIdx);
               } else {
-                await speakText("¡Excelente! Hemos terminado el ejercicio.");
+                await speakDynamicText(
+                  "¡Excelente! Hemos terminado el ejercicio.",
+                );
                 stopConversation();
               }
             } else {
-              console.log("[Analysis] Staying on same question (retry)");
+              console.log("[Analysis] Retry same question");
             }
           } catch (error) {
             console.error("Analysis Error:", error);
+            // Fallback en caso de error
             const nextIdx = currentQuestionIndexRef.current + 1;
             if (nextIdx < LESSON_2_VOICE_MVP_QUESTIONS.length) {
               currentQuestionIndexRef.current = nextIdx;
-              speakText(LESSON_2_VOICE_MVP_QUESTIONS[nextIdx]);
+              speakQuestionByIndex(nextIdx);
             }
           } finally {
             isProcessingRef.current = false;
-            // APAGAR ESTADO DE PENSANDO (Ya respondió o falló)
             setIsThinking(false);
           }
         }
@@ -240,6 +342,7 @@ export function useLesson2Drill({ part = 1 } = {}) {
       console.error(err);
       setErrorMessage("Error al iniciar");
       setConnectionState("error");
+      setIsThinking(false);
     }
   };
 
@@ -256,7 +359,7 @@ export function useLesson2Drill({ part = 1 } = {}) {
     connectionState,
     errorMessage,
     messages,
-    isThinking, // <--- Retornamos esto para usarlo en la UI (VoiceChat.tsx)
+    isThinking,
     startConversation,
     stopConversation,
   };
