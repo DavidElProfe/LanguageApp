@@ -11,7 +11,7 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
-// CACHÉ GLOBAL
+// CACHÉ GLOBAL (Persiste entre renderizados para velocidad)
 const audioCache = new Map<number, Blob>();
 
 export function useLesson1Drill() {
@@ -147,6 +147,25 @@ export function useLesson1Drill() {
       setIsThinking(false);
       audioCache.clear();
 
+      // --- 📱 FIX CRÍTICO PARA MÓVIL (iOS/Android) ---
+      // Creamos el audio y reproducimos silencio INMEDIATAMENTE al hacer click.
+      const audioEl = document.createElement("audio");
+      audioEl.autoplay = true;
+
+      // CORRECCIÓN TYPESCRIPT: Usamos setAttribute
+      audioEl.setAttribute("playsinline", "true");
+
+      // Base64 de un archivo WAV de silencio cortísimo
+      audioEl.src =
+        "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAGZGF0YQQAAAAAAA==";
+
+      // Intentamos reproducir ya mismo para desbloquear el audio context
+      audioEl.play().catch((e) => console.log("Audio warm-up prevented:", e));
+
+      document.body.appendChild(audioEl);
+      audioRef.current = audioEl;
+      // ------------------------------------------------
+
       const tokenRes = await fetch(`/api/assistant/simple-session?lesson=1`);
       const response = await tokenRes.json();
       sessionIdRef.current = response.sessionId;
@@ -154,13 +173,16 @@ export function useLesson1Drill() {
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
-      const audio = document.createElement("audio");
-      audio.autoplay = true;
-      audio.muted = true;
-      document.body.appendChild(audio);
-      audioRef.current = audio;
+      // Conectamos el stream al elemento de audio que ya creamos arriba
+      pc.ontrack = (e) => {
+        if (audioRef.current) {
+          audioRef.current.srcObject = e.streams[0];
+          audioRef.current
+            .play()
+            .catch((e) => console.error("Stream play failed", e));
+        }
+      };
 
-      pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
