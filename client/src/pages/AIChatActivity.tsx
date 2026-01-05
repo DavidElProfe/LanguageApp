@@ -1,6 +1,6 @@
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Mic, Square, ChevronLeft, Volume2 } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Button } from "@/components/ui/button";
@@ -13,12 +13,9 @@ import {
 } from "@/components/ui/card";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
-import { useRealtimeConversation } from "@/hooks/useRealtimeConversation";
-import ConversationTranscript from "@/components/ConversationTranscript";
 import { queryClient } from "@/lib/queryClient";
-
-// 🔊 TTS (NUEVO)
-import { useTTSPlayer } from "@/hooks/useTTSPlayer";
+// Importamos el componente que tiene la lógica del Pipeline
+import ConversationPartner from "@/components/ConversationPartner";
 
 export default function AIChatActivity() {
   const [, params] = useRoute(
@@ -28,6 +25,7 @@ export default function AIChatActivity() {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  // 1. Obtener datos del curso
   const { data: course, isLoading } = useQuery({
     queryKey: ["/api/courses", params?.courseId],
     queryFn: async () => {
@@ -36,6 +34,7 @@ export default function AIChatActivity() {
     },
   });
 
+  // 2. Obtener completados para saber si ya lo hizo
   const { data: completions = [] } = useQuery({
     queryKey: ["/api/completions"],
     queryFn: async () => {
@@ -54,23 +53,7 @@ export default function AIChatActivity() {
     enabled: !!user,
   });
 
-  const lesson = course?.lessons?.find((l: any) => l.id === params?.lessonId);
-  const topic = lesson?.topics?.find((t: any) => t.id === params?.topicId);
-  const chatActivity = topic?.activities?.find((a: any) => a.type === "chat");
-
-  const lessonOrder = lesson?.order ?? 1;
-
-  const {
-    connectionState,
-    errorMessage,
-    messages,
-    startConversation,
-    stopConversation,
-  } = useRealtimeConversation({ lesson: lessonOrder });
-
-  // 🔊 TTS hook (NUEVO)
-  const { speak, speakLessonQuestion, isPlaying } = useTTSPlayer();
-
+  // 3. Mutación para marcar como completado
   const completeActivity = useMutation({
     mutationFn: async (activityId: string) => {
       if (globalThis.__supabaseInitPromise) {
@@ -95,6 +78,10 @@ export default function AIChatActivity() {
     },
   });
 
+  const lesson = course?.lessons?.find((l: any) => l.id === params?.lessonId);
+  const topic = lesson?.topics?.find((t: any) => t.id === params?.topicId);
+  const chatActivity = topic?.activities?.find((a: any) => a.type === "chat");
+
   const completedIds = new Set(
     (Array.isArray(completions) ? completions : []).map(
       (c: any) => c.activityId,
@@ -104,24 +91,16 @@ export default function AIChatActivity() {
     ? completedIds.has(chatActivity.id)
     : false;
 
-  const handleStopAndComplete = async () => {
-    stopConversation();
-
-    if (!user) {
-      toast({
-        title: "Por favor inicia sesión",
-        description: "Inicia sesión para guardar tu progreso",
-      });
-      setLocation("/auth");
-      return;
-    }
+  // Lógica que se ejecuta cuando el Pipeline dice "Aprobado"
+  const handlePipelineCompletion = async () => {
+    if (!user) return;
 
     if (!isActivityComplete && chatActivity?.id) {
       try {
         await completeActivity.mutateAsync(chatActivity.id);
         toast({
           title: "¡Excelente!",
-          description: "Conversación completada",
+          description: "Lección de conversación completada.",
         });
       } catch {
         toast({
@@ -131,10 +110,6 @@ export default function AIChatActivity() {
         });
       }
     }
-
-    setLocation(
-      `/courses/${params?.courseId}/lessons/${params?.lessonId}/topics/${params?.topicId}`,
-    );
   };
 
   if (isLoading || !course) {
@@ -147,7 +122,7 @@ export default function AIChatActivity() {
     );
   }
 
-  if (!lesson || !topic || !chatActivity) {
+  if (!lesson || !topic) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
@@ -158,23 +133,6 @@ export default function AIChatActivity() {
       </div>
     );
   }
-
-  const getStatusText = () => {
-    switch (connectionState) {
-      case "idle":
-        return "Presiona el botón para empezar a practicar";
-      case "connecting":
-        return "Conectando...";
-      case "active":
-        return "Conversación activa - Habla con tu asistente de IA";
-      case "ended":
-        return "Conversación terminada";
-      case "error":
-        return errorMessage || "Error en la conexión";
-      default:
-        return "";
-    }
-  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -196,66 +154,25 @@ export default function AIChatActivity() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Actividad 3: Conversar con IA</CardTitle>
-              <CardDescription>{topic.title}</CardDescription>
+              <CardTitle>Práctica de Conversación</CardTitle>
+              <CardDescription>
+                Tema: {topic.title} - {lesson.title}
+              </CardDescription>
             </CardHeader>
 
-            <CardContent className="space-y-6">
-              <div className="text-center py-6">
-                <p className="text-lg font-medium">{getStatusText()}</p>
-              </div>
-
-              {(connectionState === "connecting" ||
-                connectionState === "active" ||
-                connectionState === "ended") && (
-                <ConversationTranscript
-                  messages={messages}
-                  connectionState={connectionState}
-                />
-              )}
-
-              <div className="flex flex-col gap-3 items-center">
-                {connectionState === "idle" && (
-                  <Button onClick={startConversation} size="lg">
-                    <Mic className="mr-2 h-5 w-5" />
-                    Empezar conversación
-                  </Button>
-                )}
-
-                {(connectionState === "connecting" ||
-                  connectionState === "active" ||
-                  connectionState === "ended") && (
-                  <Button
-                    onClick={handleStopAndComplete}
-                    size="lg"
-                    variant="destructive"
-                  >
-                    <Square className="mr-2 h-5 w-5" />
-                    Terminar conversación
-                  </Button>
-                )}
-
-                {/* 🔊 BOTONES DE PRUEBA TTS (NUEVO) */}
-                <Button
-                  variant="outline"
-                  onClick={() => speak("Hello. What is your name?")}
-                  disabled={isPlaying}
-                  className="gap-2"
-                >
-                  <Volume2 className="h-4 w-4" />
-                  Probar TTS (texto fijo)
-                </Button>
-
-                <Button
-                  variant="outline"
-                  onClick={() => speakLessonQuestion(0)}
-                  disabled={isPlaying}
-                  className="gap-2"
-                >
-                  <Volume2 className="h-4 w-4" />
-                  Probar TTS (lesson question 0)
-                </Button>
-              </div>
+            <CardContent>
+              {/* AQUÍ ESTÁ LA MAGIA: Usamos el componente conectado al Pipeline */}
+              <ConversationPartner
+                courseId={params?.courseId}
+                topicId={params?.topicId}
+                courseTitle={course.title}
+                lessonTitle={lesson.title}
+                topicTitle={topic.title}
+                activityType="roleplay"
+                promptSet={["Hello!", "Can we practice?", "I am ready"]} // Puedes personalizar esto según el topic
+                collapsedByDefault={false}
+                onComplete={handlePipelineCompletion}
+              />
             </CardContent>
           </Card>
         </div>

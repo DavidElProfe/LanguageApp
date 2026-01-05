@@ -14,9 +14,9 @@ import LessonDetail from "@/pages/LessonDetail";
 import TopicDetail from "@/pages/TopicDetail";
 import TopicFlashcards from "@/pages/TopicFlashcards";
 import AIChatActivity from "@/pages/AIChatActivity";
-import ChatPartner from "@/pages/ChatPartner";
 
 import SimpleMode from "@/pages/SimpleMode";
+import VoiceChat from "@/pages/VoiceChat";
 import TopicRedirect from "@/pages/TopicRedirect";
 import Dashboard from "@/pages/Dashboard";
 import Settings from "@/pages/Settings";
@@ -28,11 +28,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 function Router() {
   return (
     <Switch>
-      <Route path="/">
-        <ProtectedRoute>
-          <ChatPartner />
-        </ProtectedRoute>
-      </Route>
+      <Route path="/" component={Home} />
       <Route path="/auth" component={Auth} />
       <Route path="/home" component={Home} />
       <Route path="/pricing" component={Pricing} />
@@ -82,6 +78,11 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/admin" component={Admin} />
+      <Route path="/voice-chat">
+        <ProtectedRoute>
+          <VoiceChat />
+        </ProtectedRoute>
+      </Route>
       <Route path="/simple">
         <ProtectedRoute>
           <SimpleMode />

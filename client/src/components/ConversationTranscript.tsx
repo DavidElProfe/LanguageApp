@@ -1,23 +1,28 @@
 import { useRef, useEffect } from "react";
 import type { ConversationMessage } from "@/hooks/useRealtimeConversation";
+// 1. IMPORTAR el componente
+import { TypingIndicator } from "./TypingIndicator";
 
 interface ConversationTranscriptProps {
   messages: ConversationMessage[];
   connectionState: "idle" | "connecting" | "active" | "ended" | "error";
+  // 2. NUEVA PROP (Opcional por si otros componentes aún no la pasan)
+  isThinking?: boolean;
 }
 
 export default function ConversationTranscript({
   messages,
   connectionState,
+  isThinking, // Destructurar la prop
 }: ConversationTranscriptProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new FINAL messages arrive
+  // Auto-scroll to bottom when new messages arrive OR when thinking starts
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [messages, isThinking]); // 3. Agregamos isThinking a las dependencias
 
   if (connectionState === "idle" || connectionState === "error") {
     return null;
@@ -47,11 +52,13 @@ export default function ConversationTranscript({
             </div>
           )}
 
-          {visibleMessages.length === 0 && connectionState === "active" && (
-            <div className="text-center text-muted-foreground text-sm py-8">
-              Empieza a hablar para ver la transcripción...
-            </div>
-          )}
+          {visibleMessages.length === 0 &&
+            connectionState === "active" &&
+            !isThinking && (
+              <div className="text-center text-muted-foreground text-sm py-8">
+                Empieza a hablar para ver la transcripción...
+              </div>
+            )}
 
           {visibleMessages.map((message) => (
             <div
@@ -84,6 +91,13 @@ export default function ConversationTranscript({
               </div>
             </div>
           ))}
+
+          {/* 4. AQUI RENDERIZAMOS LA BURBUJA DENTRO DEL CHAT */}
+          {isThinking && (
+            <div className="flex justify-start animate-in fade-in slide-in-from-bottom-2">
+              <TypingIndicator />
+            </div>
+          )}
 
           {connectionState === "ended" && visibleMessages.length > 0 && (
             <div className="text-center text-muted-foreground text-xs py-2">
