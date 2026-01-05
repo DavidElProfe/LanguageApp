@@ -38,6 +38,9 @@ export function useLesson2Drill({ part = 1 } = {}) {
   const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
 
+  // NUEVO ESTADO: Para indicar visualmente que los agentes están "pensando"
+  const [isThinking, setIsThinking] = useState(false);
+
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -80,6 +83,7 @@ export function useLesson2Drill({ part = 1 } = {}) {
       setMessages([]);
       messagesRef.current = [];
       currentQuestionIndexRef.current = 0;
+      setIsThinking(false);
 
       const tokenRes = await fetch(
         `/api/assistant/simple-session?lesson=2&part=${part}`,
@@ -144,16 +148,11 @@ export function useLesson2Drill({ part = 1 } = {}) {
         }
 
         if (
-          data.type ===
-          "conversation.item.input_audio_transcription.completed"
+          data.type === "conversation.item.input_audio_transcription.completed"
         ) {
           const userText = data.transcript.trim();
 
-          if (
-            !userText ||
-            isTTSSpeakingRef.current ||
-            isProcessingRef.current
-          )
+          if (!userText || isTTSSpeakingRef.current || isProcessingRef.current)
             return;
 
           const currentQ =
@@ -170,6 +169,9 @@ export function useLesson2Drill({ part = 1 } = {}) {
           console.log(`[User Answer] ${userText}`);
           isProcessingRef.current = true;
           addMessage("user", userText);
+
+          // ACTIVAR ESTADO DE PENSANDO (UI Feedback)
+          setIsThinking(true);
 
           try {
             const analysisResult = await aiApi.evaluateResponse({
@@ -195,9 +197,7 @@ export function useLesson2Drill({ part = 1 } = {}) {
                 const nextQ = LESSON_2_VOICE_MVP_QUESTIONS[nextIdx];
                 setTimeout(() => speakText(nextQ), 500);
               } else {
-                await speakText(
-                  "¡Excelente! Hemos terminado el ejercicio.",
-                );
+                await speakText("¡Excelente! Hemos terminado el ejercicio.");
                 stopConversation();
               }
             } else {
@@ -212,6 +212,8 @@ export function useLesson2Drill({ part = 1 } = {}) {
             }
           } finally {
             isProcessingRef.current = false;
+            // APAGAR ESTADO DE PENSANDO (Ya respondió o falló)
+            setIsThinking(false);
           }
         }
       };
@@ -247,12 +249,14 @@ export function useLesson2Drill({ part = 1 } = {}) {
     pcRef.current?.close();
     audioRef.current?.remove();
     setConnectionState("ended");
+    setIsThinking(false);
   };
 
   return {
     connectionState,
     errorMessage,
     messages,
+    isThinking, // <--- Retornamos esto para usarlo en la UI (VoiceChat.tsx)
     startConversation,
     stopConversation,
   };

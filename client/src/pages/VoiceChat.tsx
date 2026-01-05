@@ -19,6 +19,8 @@ import Navbar from "@/components/Navbar";
 import { useLesson1Conversation } from "@/hooks/useLesson1Conversation";
 import { useLesson2Drill } from "@/hooks/useLesson2Drill";
 import ConversationTranscript from "@/components/ConversationTranscript";
+// 1. IMPORTAR EL INDICADOR
+import { TypingIndicator } from "@/components/TypingIndicator";
 
 const LESSON_OPTIONS = [
   {
@@ -59,13 +61,16 @@ export default function VoiceChat() {
   const lesson2 = useLesson2Drill();
 
   const activeHook = selectedLesson === 2 ? lesson2 : lesson1;
+
+  // 2. EXTRAER isThinking (Usamos 'as any' para evitar error si lesson1 no lo tiene aún)
   const {
     connectionState,
     errorMessage,
     messages,
     startConversation,
     stopConversation,
-  } = activeHook;
+    isThinking, 
+  } = activeHook as any;
 
   const requestSessionRecap = selectedLesson === 1 && 'requestSessionRecap' in lesson1 
     ? lesson1.requestSessionRecap 
@@ -157,10 +162,19 @@ export default function VoiceChat() {
                 (connectionState === "connecting" ||
                   connectionState === "active" ||
                   connectionState === "ended") && (
-                  <ConversationTranscript
-                    messages={messages}
-                    connectionState={connectionState}
-                  />
+                  <div className="flex flex-col gap-4">
+                    <ConversationTranscript
+                      messages={messages}
+                      connectionState={connectionState}
+                    />
+
+                    {/* 3. AQUI ESTÁ LA MAGIA: El indicador de "Escribiendo..." */}
+                    {isThinking && (
+                        <div className="flex justify-start px-4">
+                            <TypingIndicator />
+                        </div>
+                    )}
+                  </div>
                 )}
 
               {connectionState === "idle" && (
@@ -219,9 +233,10 @@ export default function VoiceChat() {
                       data-testid="text-conversation-active"
                     >
                       <div className="flex items-center justify-center gap-3 mb-2">
-                        <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                        {/* Si está pensando, mostramos puntito amarillo, si no, verde */}
+                        <div className={`w-3 h-3 rounded-full animate-pulse ${isThinking ? 'bg-yellow-500' : 'bg-green-500'}`}></div>
                         <span className="font-semibold">
-                          Conversación activa
+                          {isThinking ? "Analizando respuesta..." : "Conversación activa"}
                         </span>
                       </div>
                       <p

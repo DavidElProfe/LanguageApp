@@ -48,11 +48,13 @@ export class AnalysisOrchestrator {
     }
 
     try {
-      // Step 1: Run Grammar and Verifier agents IN PARALLEL
+      // LOG DE INICIO
       console.log(
-        `[ANALYSIS] Starting parallel analysis for session ${input.sessionId}`,
+        `\n🌊 [FLUJO INICIO] Sesión: ${input.sessionId} | Pregunta: "${input.currentQuestion}"`,
       );
+      console.log(`🗣️ [INPUT USUARIO]: "${input.transcription}"`);
 
+      // Step 1: Run Grammar and Verifier agents IN PARALLEL
       const [grammarResult, verifierResult] = await Promise.all([
         grammarAgent.process(input),
         verifierAgent.process(input),
@@ -60,8 +62,38 @@ export class AnalysisOrchestrator {
 
       agentsInvoked.push("grammar", "verifier");
 
+      // --- LOGS DEL PASO 1 (GRAMMAR) ---
+      console.log(`\n📘 [GRAMMAR AGENT]:`);
       console.log(
-        `[ANALYSIS] Grammar: ${grammarResult.data.overallAssessment}, Verifier: ${verifierResult.data.responseType}`,
+        `   - Tiene Errores: ${grammarResult.data.hasErrors ? "SÍ ❌" : "NO ✅"}`,
+      );
+      if (grammarResult.data.hasErrors) {
+        console.log(
+          `   - Corrección: "${grammarResult.data.correctedTranscription}"`,
+        );
+        // SAFEGUARD: Intentamos leer 'feedback' o 'feedbackInSpanish' para evitar undefined
+        const grammarFeedback =
+          (grammarResult.data as any).feedback ||
+          (grammarResult.data as any).feedbackInSpanish ||
+          "Sin feedback";
+        console.log(`   - Feedback: "${grammarFeedback}"`);
+      } else {
+        console.log(`   - Assessment: ${grammarResult.data.overallAssessment}`);
+      }
+
+      // --- LOGS DEL PASO 1 (VERIFIER) ---
+      console.log(`\n📙 [VERIFIER AGENT]:`);
+      console.log(
+        `   - ¿Es relevante?: ${verifierResult.data.isRelevant ? "SÍ ✅" : "NO ❌"} (Score: ${verifierResult.data.relevanceScore})`,
+      );
+      console.log(`   - Tipo: ${verifierResult.data.responseType}`);
+
+      // SAFEGUARD CRÍTICO (Aquí era el error):
+      // Aseguramos que reasoning sea un string antes de hacer substring
+      const verifierReasoning =
+        verifierResult.data.reasoning || "No reasoning provided";
+      console.log(
+        `   - Razonamiento: "${verifierReasoning.substring(0, 100)}..."`,
       );
 
       // Step 2: Prepare input for Judge agent
@@ -75,9 +107,17 @@ export class AnalysisOrchestrator {
       const judgeResult = await judgeAgent.process(judgeInput);
       agentsInvoked.push("judge");
 
+      // --- LOGS DEL PASO 3 (JUDGE) ---
+      console.log(`\n⚖️ [JUDGE AGENT] (Decisión Final):`);
       console.log(
-        `[ANALYSIS] Judge decision: ${judgeResult.data.decision} (confidence: ${judgeResult.data.confidence})`,
+        `   - Decisión: "${judgeResult.data.decision.toUpperCase()}" (Confianza: ${judgeResult.data.confidence})`,
       );
+      console.log(
+        `   - ¿Avanzar?: ${judgeResult.data.shouldAdvance ? "SÍ ⏩" : "NO 🛑"}`,
+      );
+      console.log(`   - Instrucción al Tutor:`);
+      console.log(`     👉 "${judgeResult.data.tutorInstruction}"`);
+      console.log(`--------------------------------------------------\n`);
 
       // Step 4: Build output
       const output: AnalysisOrchestratorOutput = {
@@ -93,9 +133,9 @@ export class AnalysisOrchestrator {
       // Include debug info if requested
       if (includeDebug) {
         output.debug = {
-          grammarResult: grammarResult.data,
-          verifierResult: verifierResult.data,
-          judgeResult: judgeResult.data,
+          grammarResult: grammarResult, // Pasamos el objeto Result completo (incluye tiempos)
+          verifierResult: verifierResult,
+          judgeResult: judgeResult,
         };
       }
 
@@ -107,7 +147,7 @@ export class AnalysisOrchestrator {
         decision: "ignore",
         shouldAdvance: false,
         tutorInstruction:
-          "Lo siento, hubo un error. Por favor, repite tu respuesta.",
+          "Lo siento, hubo un error técnico. Por favor, repite tu respuesta.",
         processingTimeMs: Date.now() - startTime,
         agentsInvoked,
       };

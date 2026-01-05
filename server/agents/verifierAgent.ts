@@ -28,7 +28,7 @@ export class VerifierAgent {
 
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: [
           { role: "system", content: VERIFIER_SYSTEM_CONTEXT },
           {
