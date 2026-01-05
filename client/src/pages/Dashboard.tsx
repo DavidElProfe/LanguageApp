@@ -38,7 +38,7 @@ export default function Dashboard() {
 
   const handleContinueLearning = () => {
     // Navigate directly to voice chat
-    setLocation('/');
+    setLocation('/voice-chat');
   };
 
   // Show loading state while checking authentication

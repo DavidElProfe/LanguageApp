@@ -11,7 +11,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
-import { useLesson1Conversation } from "@/hooks/useLesson1Conversation";
+
+// 1. IMPORTAMOS EL NUEVO HOOK DE LA LECCIÓN 1 (Drill)
+import { useLesson1Drill } from "@/hooks/useLesson1Drill";
 import { useLesson2Drill } from "@/hooks/useLesson2Drill";
 import ConversationTranscript from "@/components/ConversationTranscript";
 
@@ -50,12 +52,13 @@ export default function VoiceChat() {
   const [showDebugChat] = useState(true);
   const [recapRequested, setRecapRequested] = useState(false);
 
-  const lesson1 = useLesson1Conversation();
+  // 2. USAMOS EL NUEVO MOTOR (DRILL) PARA LA LECCIÓN 1
+  const lesson1 = useLesson1Drill();
   const lesson2 = useLesson2Drill();
 
   const activeHook = selectedLesson === 2 ? lesson2 : lesson1;
 
-  // Extraer isThinking (Usamos 'as any' para evitar error si lesson1 no lo tiene aún)
+  // Extraer isThinking (Usamos 'as any' para evitar error si faltase alguna prop)
   const {
     connectionState,
     errorMessage,
@@ -65,10 +68,12 @@ export default function VoiceChat() {
     isThinking,
   } = activeHook as any;
 
-  const requestSessionRecap =
-    selectedLesson === 1 && "requestSessionRecap" in lesson1
-      ? lesson1.requestSessionRecap
-      : () => {};
+  // La funcionalidad de Recap era del hook anterior.
+  // La dejamos como función vacía o fallback seguro por ahora.
+  const requestSessionRecap = () => {
+    // Funcionalidad pendiente de migrar a la nueva arquitectura
+    console.log("Recap no disponible en Drill Mode por el momento");
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -157,7 +162,7 @@ export default function VoiceChat() {
                   connectionState === "active" ||
                   connectionState === "ended") && (
                   <div className="flex flex-col gap-4">
-                    {/* LE PASAMOS LA PELOTA AL COMPONENTE HIJO */}
+                    {/* LE PASAMOS LA PELOTA (isThinking) AL COMPONENTE HIJO */}
                     <ConversationTranscript
                       messages={messages}
                       connectionState={connectionState}

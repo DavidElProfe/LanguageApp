@@ -28,7 +28,11 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
+      <Route path="/">
+        <ProtectedRoute>
+          <Dashboard />
+        </ProtectedRoute>
+      </Route>
       <Route path="/auth" component={Auth} />
       <Route path="/home" component={Home} />
       <Route path="/pricing" component={Pricing} />
@@ -72,6 +76,7 @@ function Router() {
           <Dashboard />
         </ProtectedRoute>
       </Route>
+      {/* /dashboard kept as alias for backwards compatibility */}
       <Route path="/settings">
         <ProtectedRoute>
           <Settings />
