@@ -14,6 +14,16 @@ export interface ConversationMessage {
 // CACHÉ GLOBAL (Persiste entre renderizados para velocidad)
 const audioCache = new Map<number, Blob>();
 
+// 🛠️ DEV TOOL: Función para leer el índice desde la URL
+// Ejemplo: http://localhost:3000/lesson1?q=5  -> Arranca en la pregunta 6
+const getStartIndex = () => {
+  if (typeof window === "undefined") return 0;
+  const params = new URLSearchParams(window.location.search);
+  const q = params.get("q");
+  const idx = q ? parseInt(q, 10) : 0;
+  return isNaN(idx) ? 0 : idx;
+};
+
 export function useLesson1Drill() {
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
@@ -27,7 +37,10 @@ export function useLesson1Drill() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
   const messagesRef = useRef<ConversationMessage[]>([]);
-  const currentQuestionIndexRef = useRef<number>(0);
+
+  // 🛠️ AQUÍ INICIALIZAMOS CON EL VALOR DE LA URL
+  const currentQuestionIndexRef = useRef<number>(getStartIndex());
+
   const isProcessingRef = useRef<boolean>(false);
   const isTTSSpeakingRef = useRef<boolean>(false);
   const sessionIdRef = useRef<string | null>(null);
@@ -45,7 +58,7 @@ export function useLesson1Drill() {
   const playAudioBlob = (blob: Blob, label: string): Promise<void> => {
     const startPlay = performance.now();
     const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
+    const audio = new Audio(url); // Volvemos a la forma simple y estable
     return new Promise<void>((resolve) => {
       audio.onended = () => {
         resolve();
@@ -145,26 +158,11 @@ export function useLesson1Drill() {
       setConnectionState("connecting");
       setMessages([]);
       setIsThinking(false);
+
+      // Limpiamos caché solo si empezamos desde el principio,
+      // si usamos la Dev Tool (?q=10) quizás querramos mantenerla,
+      // pero por seguridad limpiamos para evitar inconsistencias.
       audioCache.clear();
-
-      // --- 📱 FIX CRÍTICO PARA MÓVIL (iOS/Android) ---
-      // Creamos el audio y reproducimos silencio INMEDIATAMENTE al hacer click.
-      const audioEl = document.createElement("audio");
-      audioEl.autoplay = true;
-
-      // CORRECCIÓN TYPESCRIPT: Usamos setAttribute
-      audioEl.setAttribute("playsinline", "true");
-
-      // Base64 de un archivo WAV de silencio cortísimo
-      audioEl.src =
-        "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAGZGF0YQQAAAAAAA==";
-
-      // Intentamos reproducir ya mismo para desbloquear el audio context
-      audioEl.play().catch((e) => console.log("Audio warm-up prevented:", e));
-
-      document.body.appendChild(audioEl);
-      audioRef.current = audioEl;
-      // ------------------------------------------------
 
       const tokenRes = await fetch(`/api/assistant/simple-session?lesson=1`);
       const response = await tokenRes.json();
@@ -173,16 +171,12 @@ export function useLesson1Drill() {
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
-      // Conectamos el stream al elemento de audio que ya creamos arriba
-      pc.ontrack = (e) => {
-        if (audioRef.current) {
-          audioRef.current.srcObject = e.streams[0];
-          audioRef.current
-            .play()
-            .catch((e) => console.error("Stream play failed", e));
-        }
-      };
+      const audio = document.createElement("audio");
+      audio.autoplay = true;
+      document.body.appendChild(audio);
+      audioRef.current = audio;
 
+      pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
@@ -203,9 +197,13 @@ export function useLesson1Drill() {
             },
           }),
         );
+
+        // 🛠️ USAMOS EL ÍNDICE REF (que puede venir de la URL)
         setTimeout(() => {
-          speakQuestionByIndex(0);
-          prefetchNextQuestion(0);
+          const startIdx = currentQuestionIndexRef.current;
+          console.log(`🚀 [START] Starting at index: ${startIdx}`);
+          speakQuestionByIndex(startIdx);
+          prefetchNextQuestion(startIdx);
         }, 500);
       };
 

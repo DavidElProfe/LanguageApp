@@ -1,6 +1,4 @@
-// ===========================================================================
-// LESSON 2: "THE MIX" (Curated MVP Version - Max 35 Questions)
-// ===========================================================================
+
 
 // 1. INTRO & BASICS (Calentamiento)
 const SECTION_1_BASICS = [
@@ -25,7 +23,7 @@ const SECTION_3_VOCAB = [
   "How do you say el hermano in English?",
   "How do you say la madre in English?",
   "How do you say el hijo in English?",
-  "How do you say el maestro in English?", // Importante para el contexto escolar
+  "How do you say el maestro in English?", 
   "How do you say el libro in English?",
   "How do you say la pizarra in English?",
   "How do you say la mochila in English?",
@@ -45,24 +43,19 @@ const SECTION_5_COLORS = [
   "What color is the pencil?",
   "What color is the door?",
   "What color is the book?",
-  "What color is the dog?", // Un animal siempre es divertido
+  "What color is the dog?", 
 ];
 
 // 6. SMALL TALK & CLOSING (Para terminar con buena energía)
 const SECTION_6_CLOSING = [
-  "Do you like pizza?", // Clásica
+  "Do you like pizza?", 
   "Do you like the beach?",
   "What is your favorite food?",
   "What is your favorite movie genre?",
   "What is your favorite weather?",
-  "Let’s stay in touch!", // Cierre formal
-  "Take care!", // Despedida
+  "Let’s stay in touch!", 
+  "Take care!", 
 ];
-
-// ===========================================================================
-// 🚀 EXPORTACIÓN FINAL
-// Total: ~38 Preguntas. Tiempo estimado: 10-12 minutos.
-// ===========================================================================
 
 export const LESSON_2_VOICE_MVP_QUESTIONS = [
   ...SECTION_1_BASICS,

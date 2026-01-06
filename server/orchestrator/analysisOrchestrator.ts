@@ -2,10 +2,11 @@
  * Analysis Orchestrator
  *
  * Coordinates the multi-agent analysis flow:
- * 1. Receives transcription and question context
- * 2. Runs Grammar + Verifier agents IN PARALLEL
- * 3. Passes results to Judge agent
- * 4. Returns final decision
+ * 1. Receives transcription
+ * 2. SANITIZES transcription (Fixes phonetic errors like Sun/Son)
+ * 3. Runs Grammar + Verifier agents IN PARALLEL
+ * 4. Passes results to Judge agent
+ * 5. Returns final decision
  */
 
 import { grammarAgent } from "../agents/grammarAgent";
@@ -18,15 +19,43 @@ import type {
   JudgeInput,
 } from "../agents/types/analysisTypes";
 
+// 🔧 MAPA DE CORRECCIONES FONÉTICAS FORZADAS
+// Esto engaña a la IA antes de que pueda juzgar mal.
+const PHONETIC_FIXES: Record<string, string> = {
+  "the sun": "the son",
+  "a sun": "a son",
+  "my sun": "my son",
+  sun: "son",
+  bitch: "beach",
+  shit: "sheet",
+  pies: "peace",
+  "i ": "eye ",
+  sea: "see",
+};
+
 export class AnalysisOrchestrator {
   /**
+   * Limpia la transcripción de Whisper usando fuerza bruta.
+   * Si encuentra "sun", lo cambia a "son" para evitar falsos negativos.
+   */
+  private sanitizeTranscription(text: string): string {
+    let cleanText = text.toLowerCase();
+
+    for (const [wrong, right] of Object.entries(PHONETIC_FIXES)) {
+      // Usamos \b (Word Boundary) para no romper palabras como "Sunday"
+      const regex = new RegExp(`\\b${wrong}\\b`, "gi");
+      if (regex.test(cleanText)) {
+        console.log(`🔧 [AUTO-FIX] Replaced "${wrong}" with "${right}"`);
+        cleanText = cleanText.replace(regex, right);
+      }
+    }
+
+    // Restaurar mayúscula inicial
+    return cleanText.charAt(0).toUpperCase() + cleanText.slice(1);
+  }
+
+  /**
    * Main entry point for analyzing student responses.
-   *
-   * Flow:
-   * 1. Run Grammar + Verifier agents in parallel
-   * 2. Wait for both to complete
-   * 3. Pass results to Judge agent
-   * 4. Return final decision
    */
   async analyze(
     input: AnalysisInput,
@@ -48,21 +77,37 @@ export class AnalysisOrchestrator {
     }
 
     try {
+      // 1. 🛑 INTERCEPTAR Y CORREGIR (La Trampa)
+      const originalTranscription = input.transcription;
+      const sanitizedTranscription = this.sanitizeTranscription(
+        originalTranscription,
+      );
+
+      // Creamos un nuevo input "limpio" para engañar a los agentes
+      const cleanInput = {
+        ...input,
+        transcription: sanitizedTranscription,
+      };
+
       // LOG DE INICIO
       console.log(
         `\n🌊 [FLUJO INICIO] Sesión: ${input.sessionId} | Pregunta: "${input.currentQuestion}"`,
       );
-      console.log(`🗣️ [INPUT USUARIO]: "${input.transcription}"`);
+      console.log(`🗣️ [INPUT ORIGINAL]: "${originalTranscription}"`);
+      if (originalTranscription !== sanitizedTranscription) {
+        console.log(`✨ [INPUT CORREGIDO]: "${sanitizedTranscription}"`);
+      }
 
-      // Step 1: Run Grammar and Verifier agents IN PARALLEL
+      // Step 2: Run Grammar and Verifier agents IN PARALLEL using CLEAN INPUT
       const [grammarResult, verifierResult] = await Promise.all([
-        grammarAgent.process(input),
-        verifierAgent.process(input),
+        grammarAgent.process(cleanInput),
+        verifierAgent.process(cleanInput),
       ]);
 
       agentsInvoked.push("grammar", "verifier");
 
       // --- LOGS DEL PASO 1 (GRAMMAR) ---
+      // Nota: Accedemos a .data porque así lo definimos en analysisTypes.ts
       console.log(`\n📘 [GRAMMAR AGENT]:`);
       console.log(
         `   - Tiene Errores: ${grammarResult.data.hasErrors ? "SÍ ❌" : "NO ✅"}`,
@@ -71,10 +116,9 @@ export class AnalysisOrchestrator {
         console.log(
           `   - Corrección: "${grammarResult.data.correctedTranscription}"`,
         );
-        // SAFEGUARD: Intentamos leer 'feedback' o 'feedbackInSpanish' para evitar undefined
         const grammarFeedback =
-          (grammarResult.data as any).feedback ||
-          (grammarResult.data as any).feedbackInSpanish ||
+          grammarResult.data.feedback ||
+          grammarResult.data.feedbackInSpanish ||
           "Sin feedback";
         console.log(`   - Feedback: "${grammarFeedback}"`);
       } else {
@@ -88,22 +132,20 @@ export class AnalysisOrchestrator {
       );
       console.log(`   - Tipo: ${verifierResult.data.responseType}`);
 
-      // SAFEGUARD CRÍTICO (Aquí era el error):
-      // Aseguramos que reasoning sea un string antes de hacer substring
       const verifierReasoning =
         verifierResult.data.reasoning || "No reasoning provided";
       console.log(
         `   - Razonamiento: "${verifierReasoning.substring(0, 100)}..."`,
       );
 
-      // Step 2: Prepare input for Judge agent
+      // Step 3: Prepare input for Judge agent (Usamos también el input limpio)
       const judgeInput: JudgeInput = {
-        ...input,
+        ...cleanInput,
         grammarAnalysis: grammarResult.data,
         verifierAnalysis: verifierResult.data,
       };
 
-      // Step 3: Run Judge agent
+      // Step 4: Run Judge agent
       const judgeResult = await judgeAgent.process(judgeInput);
       agentsInvoked.push("judge");
 
@@ -119,7 +161,7 @@ export class AnalysisOrchestrator {
       console.log(`     👉 "${judgeResult.data.tutorInstruction}"`);
       console.log(`--------------------------------------------------\n`);
 
-      // Step 4: Build output
+      // Step 5: Build output
       const output: AnalysisOrchestratorOutput = {
         success: true,
         decision: judgeResult.data.decision,
@@ -133,9 +175,10 @@ export class AnalysisOrchestrator {
       // Include debug info if requested
       if (includeDebug) {
         output.debug = {
-          grammarResult: grammarResult, // Pasamos el objeto Result completo (incluye tiempos)
+          grammarResult: grammarResult,
           verifierResult: verifierResult,
           judgeResult: judgeResult,
+          originalTranscription, // Guardamos el original por si quieres ver qué dijo realmente
         };
       }
 

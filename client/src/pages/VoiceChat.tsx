@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
 
-// 1. IMPORTAMOS EL NUEVO HOOK DE LA LECCIÓN 1 (Drill)
+// IMPORTAMOS LOS HOOKS
 import { useLesson1Drill } from "@/hooks/useLesson1Drill";
 import { useLesson2Drill } from "@/hooks/useLesson2Drill";
 import ConversationTranscript from "@/components/ConversationTranscript";
@@ -46,19 +46,32 @@ const LESSON_OPTIONS = [
   { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
 ];
 
+// 🛠️ DEV TOOL: Esta función lee la URL para saber qué lección cargar
+const getInitialLesson = () => {
+  if (typeof window === "undefined") return 1;
+  const params = new URLSearchParams(window.location.search);
+  const lesson = params.get("lesson");
+  // Si dice ?lesson=2, devuelve 2. Si no dice nada, devuelve 1.
+  const lessonNum = lesson ? parseInt(lesson, 10) : 1;
+  return isNaN(lessonNum) ? 1 : lessonNum;
+};
+
 export default function VoiceChat() {
   const [, setLocation] = useLocation();
-  const [selectedLesson, setSelectedLesson] = useState(1);
+
+  // 🛠️ AQUÍ USAMOS LA FUNCIÓN PARA EL VALOR INICIAL
+  const [selectedLesson, setSelectedLesson] = useState(getInitialLesson());
+
   const [showDebugChat] = useState(true);
   const [recapRequested, setRecapRequested] = useState(false);
 
-  // 2. USAMOS EL NUEVO MOTOR (DRILL) PARA LA LECCIÓN 1
+  // Inicializamos los hooks
   const lesson1 = useLesson1Drill();
   const lesson2 = useLesson2Drill();
 
+  // Elegimos cuál usar según el estado
   const activeHook = selectedLesson === 2 ? lesson2 : lesson1;
 
-  // Extraer isThinking (Usamos 'as any' para evitar error si faltase alguna prop)
   const {
     connectionState,
     errorMessage,
@@ -68,10 +81,7 @@ export default function VoiceChat() {
     isThinking,
   } = activeHook as any;
 
-  // La funcionalidad de Recap era del hook anterior.
-  // La dejamos como función vacía o fallback seguro por ahora.
   const requestSessionRecap = () => {
-    // Funcionalidad pendiente de migrar a la nueva arquitectura
     console.log("Recap no disponible en Drill Mode por el momento");
   };
 
@@ -162,7 +172,6 @@ export default function VoiceChat() {
                   connectionState === "active" ||
                   connectionState === "ended") && (
                   <div className="flex flex-col gap-4">
-                    {/* LE PASAMOS LA PELOTA (isThinking) AL COMPONENTE HIJO */}
                     <ConversationTranscript
                       messages={messages}
                       connectionState={connectionState}
@@ -227,7 +236,6 @@ export default function VoiceChat() {
                       data-testid="text-conversation-active"
                     >
                       <div className="flex items-center justify-center gap-3 mb-2">
-                        {/* Si está pensando, mostramos puntito amarillo, si no, verde */}
                         <div
                           className={`w-3 h-3 rounded-full animate-pulse ${isThinking ? "bg-yellow-500" : "bg-green-500"}`}
                         ></div>

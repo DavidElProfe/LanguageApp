@@ -57,6 +57,8 @@ export interface GrammarAgentOutput {
   overallAssessment: GrammarAssessment;
   correctedTranscription: string;
   feedbackInSpanish: string;
+  // ✅ COMPATIBILIDAD ORQUESTADOR:
+  feedback?: string;
 }
 
 export interface GrammarAgentResult {
@@ -83,6 +85,10 @@ export interface VerifierAgentOutput {
   responseType: ResponseType;
   expectedResponseHint?: string;
   analysisReason: string;
+  // ✅ COMPATIBILIDAD ORQUESTADOR:
+  // Agregamos estos alias para que el orquestador no falle
+  isRelevant: boolean;
+  reasoning: string;
 }
 
 export interface VerifierAgentResult {
@@ -139,10 +145,12 @@ export interface AnalysisOrchestratorOutput {
   grammarFeedback?: string;
   processingTimeMs: number;
   agentsInvoked: AnalysisAgentName[];
+  // ✅ FIX: El debug debe aceptar el objeto 'Result' completo, no solo el Output
   debug?: {
-    grammarResult: GrammarAgentOutput;
-    verifierResult: VerifierAgentOutput;
-    judgeResult: JudgeAgentOutput;
+    grammarResult: GrammarAgentResult;
+    verifierResult: VerifierAgentResult;
+    judgeResult: JudgeAgentResult;
+    originalTranscription?: string;
   };
 }
 
