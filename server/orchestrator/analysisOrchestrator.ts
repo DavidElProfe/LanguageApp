@@ -29,7 +29,7 @@ const PHONETIC_FIXES: Record<string, string> = {
   bitch: "beach",
   shit: "sheet",
   pies: "peace",
-  "i ": "eye ",
+  //"i ": "eye ",
   sea: "see",
 };
 
