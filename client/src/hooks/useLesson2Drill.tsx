@@ -42,6 +42,9 @@ export function useLesson2Drill({ part = 1 } = {}) {
   // 🛠️ INICIALIZAMOS CON EL VALOR DE LA URL
   const currentQuestionIndexRef = useRef<number>(getStartIndex());
 
+  // 📝 1. LIBRETA DE ERRORES (Set para evitar duplicados)
+  const sessionMistakesRef = useRef<Set<string>>(new Set());
+
   const isProcessingRef = useRef<boolean>(false);
   const isTTSSpeakingRef = useRef<boolean>(false);
   const sessionIdRef = useRef<string | null>(null);
@@ -169,6 +172,7 @@ export function useLesson2Drill({ part = 1 } = {}) {
 
       // Limpiamos caché (excepto si queremos mantener estado, pero mejor limpiar para evitar bugs)
       audioCache.clear();
+      sessionMistakesRef.current.clear(); // Limpiamos libreta de errores
 
       const tokenRes = await fetch(
         `/api/assistant/simple-session?lesson=2&part=${part}`,
@@ -181,6 +185,11 @@ export function useLesson2Drill({ part = 1 } = {}) {
 
       const audio = document.createElement("audio");
       audio.autoplay = true;
+
+      // 📱 FIX PARA MÓVILES: playsinline evita pantalla negra/bloqueos en iOS
+      audio.setAttribute("playsinline", "true");
+      audio.setAttribute("webkit-playsinline", "true");
+
       document.body.appendChild(audio);
       audioRef.current = audio;
 
@@ -284,14 +293,43 @@ export function useLesson2Drill({ part = 1 } = {}) {
               await speakDynamicText(analysisResult.tutorInstruction);
             }
 
+            // 📝 2. SI HAY ERROR, LO GUARDAMOS
+            if (analysisResult.decision === "correct_and_retry") {
+              if (currentQ) {
+                sessionMistakesRef.current.add(currentQ);
+                console.log(`📝 [MISTAKE LOGGED] Added: "${currentQ}"`);
+              }
+            }
+
             if (analysisResult.shouldAdvance) {
               const nextIdx = currentQuestionIndexRef.current + 1;
+
               // ✅ USAMOS LA LISTA CORRECTA
               if (nextIdx < LESSON_2_VOICE_MVP_QUESTIONS.length) {
                 currentQuestionIndexRef.current = nextIdx;
                 console.log("⏩ [ADVANCE] Playing next question...");
                 await speakQuestionByIndex(nextIdx);
               } else {
+                // 📝 3. FIN DE LECCIÓN: GENERAMOS EL REPORTE
+                const mistakes = Array.from(sessionMistakesRef.current);
+                let finalMsg =
+                  "¡Excelente! Hemos terminado el ejercicio. ¡Desempeño perfecto!";
+
+                if (mistakes.length > 0) {
+                  // Limpiamos el texto para que no sea repetitivo al hablar
+                  const cleanMistakes = mistakes
+                    .map((m) =>
+                      m
+                        .replace(/How do you say|in English\?|What is/gi, "")
+                        .trim(),
+                    )
+                    .slice(0, 3); // Limitamos a 3 para no aburrir
+
+                  finalMsg = `Ejercicio completado. Tuviste algunos errores en: ${cleanMistakes.join(", ")}. ¡Sigue practicando!`;
+                }
+
+                console.log("🏁 [FINISH] " + finalMsg);
+                await speakDynamicText(finalMsg);
                 stopConversation();
               }
             }
