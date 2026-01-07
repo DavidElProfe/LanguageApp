@@ -47,9 +47,9 @@ export function VoiceOrb({ state, onStart, onStop }: VoiceOrbProps) {
         };
       default: // idle
         return {
-          color: "bg-gray-800",
-          shadow: "shadow-gray-800/50",
-          icon: <Mic className="w-8 h-8 text-white" />,
+          color: "bg-foreground/80", // Se adapta al tema (gris oscuro en light, gris claro en dark)
+          shadow: "shadow-foreground/20",
+          icon: <Mic className="w-8 h-8 text-background" />, // Icono color del fondo
           text: "The Language School",
           subtext: "Tap start to begin Lesson 1",
         };
@@ -60,9 +60,9 @@ export function VoiceOrb({ state, onStart, onStop }: VoiceOrbProps) {
   const isActive = state !== "idle" && state !== "error";
 
   return (
-    <div className="flex flex-col items-center justify-center space-y-12 py-10 w-full max-w-sm mx-auto">
+    <div className="flex flex-col items-center justify-center space-y-12 py-6 w-full max-w-sm mx-auto">
       {/* 1. EL ORBE (ANIMACIONES) */}
-      <div className="relative flex items-center justify-center">
+      <div className="relative flex items-center justify-center py-4">
         {/* Anillo de "Respiración" (Solo activo) */}
         {isActive && (
           <motion.div
@@ -82,7 +82,7 @@ export function VoiceOrb({ state, onStart, onStop }: VoiceOrbProps) {
           <motion.div
             animate={{ rotate: 360 }}
             transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-            className="absolute w-32 h-32 border-2 border-purple-300 border-t-transparent rounded-full opacity-60"
+            className="absolute w-32 h-32 border-2 border-purple-300 dark:border-purple-500 border-t-transparent rounded-full opacity-60"
           />
         )}
 
@@ -108,7 +108,7 @@ export function VoiceOrb({ state, onStart, onStop }: VoiceOrbProps) {
           key={config.text}
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-2xl font-bold text-gray-800"
+          className="text-2xl font-bold text-foreground"
         >
           {config.text}
         </motion.h2>
@@ -116,7 +116,7 @@ export function VoiceOrb({ state, onStart, onStop }: VoiceOrbProps) {
           key={config.subtext}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="text-gray-500 text-sm font-medium"
+          className="text-muted-foreground text-sm font-medium"
         >
           {config.subtext}
         </motion.p>
@@ -127,7 +127,10 @@ export function VoiceOrb({ state, onStart, onStop }: VoiceOrbProps) {
         {isActive ? (
           <button
             onClick={onStop}
-            className="w-full flex items-center justify-center space-x-2 px-6 py-4 bg-red-50 text-red-600 rounded-2xl hover:bg-red-100 transition-colors font-semibold border border-red-100"
+            className="w-full flex items-center justify-center space-x-2 px-6 py-4 
+                       bg-red-50 text-red-600 border border-red-100 
+                       dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/30
+                       rounded-2xl hover:opacity-80 transition-all font-semibold"
           >
             <Square className="w-5 h-5 fill-current" />
             <span>End Session</span>
@@ -135,7 +138,10 @@ export function VoiceOrb({ state, onStart, onStop }: VoiceOrbProps) {
         ) : (
           <button
             onClick={onStart}
-            className="w-full px-8 py-4 bg-black text-white rounded-2xl hover:bg-gray-800 transition-transform active:scale-95 font-bold text-lg shadow-xl flex items-center justify-center space-x-2"
+            className="w-full px-8 py-4 
+                       bg-primary text-primary-foreground 
+                       rounded-2xl hover:opacity-90 transition-transform active:scale-95 
+                       font-bold text-lg shadow-xl flex items-center justify-center space-x-2"
           >
             <Mic className="w-5 h-5" />
             <span>Start Conversation</span>

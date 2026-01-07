@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, Mic, LogOut } from "lucide-react";
+import { ArrowLeft, Mic } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -15,6 +14,9 @@ import Navbar from "@/components/Navbar";
 // IMPORTAMOS LOS HOOKS
 import { useLesson1Drill } from "@/hooks/useLesson1Drill";
 import { useLesson2Drill } from "@/hooks/useLesson2Drill";
+
+// COMPONENTES DE UI NUEVOS
+import { VoiceOrb } from "@/components/VoiceOrb";
 import ConversationTranscript from "@/components/ConversationTranscript";
 
 const LESSON_OPTIONS = [
@@ -46,12 +48,11 @@ const LESSON_OPTIONS = [
   { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
 ];
 
-// 🛠️ DEV TOOL: Esta función lee la URL para saber qué lección cargar
+// 🛠️ DEV TOOL: Lee la URL para saber qué lección cargar
 const getInitialLesson = () => {
   if (typeof window === "undefined") return 1;
   const params = new URLSearchParams(window.location.search);
   const lesson = params.get("lesson");
-  // Si dice ?lesson=2, devuelve 2. Si no dice nada, devuelve 1.
   const lessonNum = lesson ? parseInt(lesson, 10) : 1;
   return isNaN(lessonNum) ? 1 : lessonNum;
 };
@@ -59,11 +60,8 @@ const getInitialLesson = () => {
 export default function VoiceChat() {
   const [, setLocation] = useLocation();
 
-  // 🛠️ AQUÍ USAMOS LA FUNCIÓN PARA EL VALOR INICIAL
+  // 🛠️ ESTADO
   const [selectedLesson, setSelectedLesson] = useState(getInitialLesson());
-
-  const [showDebugChat] = useState(true);
-  const [recapRequested, setRecapRequested] = useState(false);
 
   // Inicializamos los hooks
   const lesson1 = useLesson1Drill();
@@ -81,243 +79,128 @@ export default function VoiceChat() {
     isThinking,
   } = activeHook as any;
 
-  const requestSessionRecap = () => {
-    console.log("Recap no disponible en Drill Mode por el momento");
+  // 🎨 LÓGICA DE UI: Traducimos estado técnico a visual
+  const getVisualState = () => {
+    if (connectionState === "error") return "error";
+    if (connectionState === "idle" || connectionState === "ended")
+      return "idle";
+    if (isThinking) return "thinking";
+    return "listening";
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div className="min-h-screen flex flex-col bg-background font-sans transition-colors duration-300">
       <Navbar />
 
-      <main className="flex-1 container mx-auto px-4 py-8">
-        <Button
-          variant="ghost"
-          onClick={() => setLocation("/home")}
-          className="mb-6"
-          data-testid="button-back-home"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          Ver cursos
-        </Button>
+      <main className="flex-1 container mx-auto px-4 py-6 flex flex-col items-center">
+        {/* BOTÓN VOLVER (Discreto y adaptativo) */}
+        <div className="w-full max-w-2xl mb-4">
+          <Button
+            variant="ghost"
+            onClick={() => setLocation("/home")}
+            className="text-muted-foreground hover:text-foreground pl-0"
+            data-testid="button-back-home"
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Volver a Cursos
+          </Button>
+        </div>
 
-        <div className="max-w-2xl mx-auto">
-          <Card data-testid="card-chat-partner">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Mic className="h-6 w-6 text-primary" />
-                  </div>
-                  <CardTitle className="text-2xl">Práctica de Voz</CardTitle>
-                </div>
+        {/* CONTENEDOR PRINCIPAL (Estilo iOS/Chat moderno) */}
+        <div className="w-full max-w-md bg-card rounded-[2.5rem] shadow-xl border border-border relative overflow-hidden flex flex-col items-center h-[80vh] min-h-[600px] transition-colors duration-300">
+          {/* Decoración superior (Gradiente sutil) */}
+          <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-400 via-purple-500 to-emerald-400 z-10 opacity-80" />
+
+          {/* 1. SECCIÓN SUPERIOR: CONTROLES Y ORBE (Fija) */}
+          <div className="w-full p-6 pb-4 bg-card z-10 flex flex-col items-center shrink-0 border-b border-border/50">
+            {/* Selector de Lección */}
+            <div className="w-full mb-6">
+              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-2 block text-center">
+                Active Lesson
+              </label>
+              <Select
+                value={selectedLesson.toString()}
+                onValueChange={(value) =>
+                  setSelectedLesson(parseInt(value, 10))
+                }
+                disabled={
+                  connectionState !== "idle" &&
+                  connectionState !== "ended" &&
+                  connectionState !== "error"
+                }
+              >
+                <SelectTrigger
+                  className="w-full border-0 bg-muted/40 hover:bg-muted/60 rounded-xl text-center font-medium shadow-sm h-9 text-sm focus:ring-0 text-foreground transition-colors"
+                  data-testid="select-lesson"
+                >
+                  <SelectValue placeholder="Selecciona una lección" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LESSON_OPTIONS.map((option) => (
+                    <SelectItem
+                      key={option.value}
+                      value={option.value.toString()}
+                      disabled={!option.available}
+                      className="cursor-pointer"
+                    >
+                      {option.label}
+                      {!option.available && " — Próximamente"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* ✨ EL NUEVO ORBE ✨ */}
+            <div className="my-2">
+              <VoiceOrb
+                state={getVisualState()}
+                onStart={startConversation}
+                onStop={stopConversation}
+              />
+            </div>
+
+            {/* Mensaje de Error (Si existe) */}
+            {errorMessage && (
+              <div
+                className="mt-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-lg text-center w-full animate-in fade-in slide-in-from-top-2"
+                data-testid="text-error-message"
+              >
+                {errorMessage}
               </div>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="text-muted-foreground">
-                <p className="mb-4">
-                  Habla directamente con el tutor. Solo escucha y responde.
+            )}
+          </div>
+
+          {/* 2. SECCIÓN INFERIOR: TRANSCRIPT (Scrollable) */}
+          <div className="w-full flex-1 overflow-y-auto bg-muted/10 p-4 scroll-smooth">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-50 space-y-3">
+                <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-2">
+                  <Mic className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <p className="text-sm text-muted-foreground italic max-w-[200px]">
+                  Presiona "Start Conversation" para comenzar la práctica.
                 </p>
-                <ul className="list-disc list-inside space-y-2 text-sm">
-                  <li>El tutor te hará preguntas sencillas</li>
-                  <li>Responde en inglés con oraciones cortas</li>
-                  <li>Si no entiendes, el tutor repetirá</li>
-                </ul>
               </div>
-
-              <div className="space-y-2">
-                <label htmlFor="lesson-select" className="text-sm font-medium">
-                  Selecciona la lección que quieres practicar:
-                </label>
-                <Select
-                  value={selectedLesson.toString()}
-                  onValueChange={(value) =>
-                    setSelectedLesson(parseInt(value, 10))
-                  }
-                  disabled={
-                    connectionState !== "idle" &&
-                    connectionState !== "ended" &&
-                    connectionState !== "error"
-                  }
-                >
-                  <SelectTrigger id="lesson-select" data-testid="select-lesson">
-                    <SelectValue placeholder="Selecciona una lección" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {LESSON_OPTIONS.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value.toString()}
-                        disabled={!option.available}
-                        className={!option.available ? "opacity-50" : ""}
-                      >
-                        {option.label}
-                        {!option.available && " — Próximamente"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+            ) : (
+              <div className="pb-4">
+                <ConversationTranscript
+                  messages={messages}
+                  connectionState={connectionState}
+                  isThinking={isThinking}
+                />
+                {/* Espaciador final para que el último mensaje no quede pegado */}
+                <div className="h-8" />
               </div>
+            )}
+          </div>
+        </div>
 
-              {errorMessage && (
-                <div
-                  className="bg-destructive/10 border border-destructive/20 rounded-lg p-4 text-destructive"
-                  data-testid="text-error-message"
-                >
-                  {errorMessage}
-                </div>
-              )}
-
-              {showDebugChat &&
-                (connectionState === "connecting" ||
-                  connectionState === "active" ||
-                  connectionState === "ended") && (
-                  <div className="flex flex-col gap-4">
-                    <ConversationTranscript
-                      messages={messages}
-                      connectionState={connectionState}
-                      isThinking={isThinking}
-                    />
-                  </div>
-                )}
-
-              {connectionState === "idle" && (
-                <Button
-                  onClick={startConversation}
-                  size="lg"
-                  className="w-full"
-                  data-testid="button-start-conversation"
-                >
-                  <Mic className="mr-2 h-5 w-5" />
-                  Empezar a hablar
-                </Button>
-              )}
-
-              {connectionState === "connecting" && (
-                <Button
-                  size="lg"
-                  className="w-full"
-                  disabled
-                  data-testid="button-connecting"
-                >
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Conectando...
-                </Button>
-              )}
-
-              {connectionState === "active" && (
-                <div className="space-y-4">
-                  {!showDebugChat && (
-                    <div
-                      className="bg-gradient-to-r from-primary/20 to-primary/10 border border-primary/30 rounded-xl p-8 text-center"
-                      data-testid="voice-only-indicator"
-                    >
-                      <div className="flex flex-col items-center gap-4">
-                        <div className="relative">
-                          <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center">
-                            <Mic className="h-10 w-10 text-primary" />
-                          </div>
-                          <div className="absolute -top-1 -right-1 w-5 h-5 bg-green-500 rounded-full animate-pulse border-2 border-background"></div>
-                        </div>
-                        <div>
-                          <p className="font-semibold text-xl mb-1">
-                            Estás hablando con el tutor
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Escucha y responde en inglés
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {showDebugChat && (
-                    <div
-                      className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-center"
-                      data-testid="text-conversation-active"
-                    >
-                      <div className="flex items-center justify-center gap-3 mb-2">
-                        <div
-                          className={`w-3 h-3 rounded-full animate-pulse ${isThinking ? "bg-yellow-500" : "bg-green-500"}`}
-                        ></div>
-                        <span className="font-semibold">
-                          {isThinking
-                            ? "Analizando respuesta..."
-                            : "Conversación activa"}
-                        </span>
-                      </div>
-                      <p
-                        className="text-xs text-primary font-medium"
-                        data-testid="text-active-lesson"
-                      >
-                        {LESSON_OPTIONS.find((o) => o.value === selectedLesson)
-                          ?.label || `Lección ${selectedLesson}`}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <Button
-                      onClick={() => {
-                        setRecapRequested(true);
-                        requestSessionRecap();
-                      }}
-                      variant="outline"
-                      size="lg"
-                      disabled={recapRequested}
-                      data-testid="button-finish-recap"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Terminar
-                    </Button>
-                    <Button
-                      onClick={stopConversation}
-                      variant="destructive"
-                      size="lg"
-                      data-testid="button-end-conversation"
-                    >
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {connectionState === "ended" && (
-                <div className="space-y-4">
-                  <div
-                    className="bg-muted rounded-lg p-6 text-center"
-                    data-testid="text-conversation-ended"
-                  >
-                    <p className="font-semibold mb-2">Conversación terminada</p>
-                    <p className="text-sm text-muted-foreground">
-                      ¡Buen trabajo! Sigue practicando para mejorar.
-                    </p>
-                  </div>
-
-                  <Button
-                    onClick={startConversation}
-                    size="lg"
-                    className="w-full"
-                    data-testid="button-restart-conversation"
-                  >
-                    <Mic className="mr-2 h-5 w-5" />
-                    Empezar nueva conversación
-                  </Button>
-                </div>
-              )}
-
-              {connectionState === "error" && (
-                <Button
-                  onClick={startConversation}
-                  size="lg"
-                  className="w-full"
-                  data-testid="button-retry-conversation"
-                >
-                  <Mic className="mr-2 h-5 w-5" />
-                  Intentar nuevamente
-                </Button>
-              )}
-            </CardContent>
-          </Card>
+        {/* Footer simple fuera del card */}
+        <div className="mt-6 text-center opacity-40">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-widest">
+            Powered by OpenAI Realtime & Whisper
+          </p>
         </div>
       </main>
     </div>
