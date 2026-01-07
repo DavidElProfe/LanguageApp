@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+// ✅ IMPORT ORIGINAL (Respetado)
 import { LESSON_1_QUESTIONS } from "../../../server/prompts/Lesson1Questions";
 import { aiApi } from "../lib/api";
 
@@ -11,11 +12,10 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
-// CACHÉ GLOBAL (Persiste entre renderizados para velocidad)
+// CACHÉ GLOBAL
 const audioCache = new Map<number, Blob>();
 
 // 🛠️ DEV TOOL: Función para leer el índice desde la URL
-// Ejemplo: http://localhost:3000/lesson1?q=5  -> Arranca en la pregunta 6
 const getStartIndex = () => {
   if (typeof window === "undefined") return 0;
   const params = new URLSearchParams(window.location.search);
@@ -38,8 +38,11 @@ export function useLesson1Drill() {
 
   const messagesRef = useRef<ConversationMessage[]>([]);
 
-  // 🛠️ AQUÍ INICIALIZAMOS CON EL VALOR DE LA URL
+  // 🛠️ INICIALIZAMOS CON EL VALOR DE LA URL
   const currentQuestionIndexRef = useRef<number>(getStartIndex());
+
+  // 📝 1. LIBRETA DE ERRORES
+  const sessionMistakesRef = useRef<Set<string>>(new Set());
 
   const isProcessingRef = useRef<boolean>(false);
   const isTTSSpeakingRef = useRef<boolean>(false);
@@ -58,7 +61,7 @@ export function useLesson1Drill() {
   const playAudioBlob = (blob: Blob, label: string): Promise<void> => {
     const startPlay = performance.now();
     const url = URL.createObjectURL(blob);
-    const audio = new Audio(url); // Volvemos a la forma simple y estable
+    const audio = new Audio(url);
     return new Promise<void>((resolve) => {
       audio.onended = () => {
         resolve();
@@ -159,10 +162,8 @@ export function useLesson1Drill() {
       setMessages([]);
       setIsThinking(false);
 
-      // Limpiamos caché solo si empezamos desde el principio,
-      // si usamos la Dev Tool (?q=10) quizás querramos mantenerla,
-      // pero por seguridad limpiamos para evitar inconsistencias.
       audioCache.clear();
+      sessionMistakesRef.current.clear(); // Limpiamos errores previos
 
       const tokenRes = await fetch(`/api/assistant/simple-session?lesson=1`);
       const response = await tokenRes.json();
@@ -173,6 +174,11 @@ export function useLesson1Drill() {
 
       const audio = document.createElement("audio");
       audio.autoplay = true;
+
+      // 📱 FIX PARA MÓVILES
+      audio.setAttribute("playsinline", "true");
+      audio.setAttribute("webkit-playsinline", "true");
+
       document.body.appendChild(audio);
       audioRef.current = audio;
 
@@ -191,14 +197,13 @@ export function useLesson1Drill() {
             type: "session.update",
             session: {
               instructions:
-                "System: You are a passive transcriber. Listen and transcribe. Do NOT speak.",
+                "System: You are an English transcriber for a student with a heavy Spanish accent. Transcribe the speech into ENGLISH text. If the pronunciation is imperfect, map it to the closest English word. Do NOT transcribe in Spanish. Do NOT auto-correct grammar errors (e.g. if user says 'Me name', transcribe 'Me name').",
               tool_choice: "none",
               temperature: 0.6,
             },
           }),
         );
 
-        // 🛠️ USAMOS EL ÍNDICE REF (que puede venir de la URL)
         setTimeout(() => {
           const startIdx = currentQuestionIndexRef.current;
           console.log(`🚀 [START] Starting at index: ${startIdx}`);
@@ -261,7 +266,7 @@ export function useLesson1Drill() {
               currentQuestion: currentQ || "",
               questionIndex: currentQuestionIndexRef.current,
               sessionId: sessionIdRef.current || "unknown",
-              lessonNumber: 1,
+              lessonNumber: 1, // Importante: Lección 1
             });
 
             const tEndAnalysis = performance.now();
@@ -274,6 +279,20 @@ export function useLesson1Drill() {
               await speakDynamicText(analysisResult.tutorInstruction);
             }
 
+            // 📝 2. SI HAY ERROR, LO GUARDAMOS
+            if (analysisResult.decision === "correct_and_retry") {
+              if (currentQ) {
+                sessionMistakesRef.current.add(currentQ);
+
+                // 🐞 LOGS DE DEBUG
+                console.log(`🐞 [DEBUG] Mistake ADDED: "${currentQ}"`);
+                console.log(
+                  "🐞 [DEBUG] Current Mistakes Set:",
+                  Array.from(sessionMistakesRef.current),
+                );
+              }
+            }
+
             if (analysisResult.shouldAdvance) {
               const nextIdx = currentQuestionIndexRef.current + 1;
               if (nextIdx < LESSON_1_QUESTIONS.length) {
@@ -281,6 +300,36 @@ export function useLesson1Drill() {
                 console.log("⏩ [ADVANCE] Playing next question...");
                 await speakQuestionByIndex(nextIdx);
               } else {
+                // 📝 3. FIN DE LECCIÓN: FEEDBACK SUAVE
+                const mistakes = Array.from(sessionMistakesRef.current);
+
+                // 🐞 LOGS DE DEBUG
+                console.log("🐞 [DEBUG] Reached END of Lesson.");
+                console.log("🐞 [DEBUG] Mistakes to report:", mistakes);
+
+                let finalMsg =
+                  "¡Excelente sesión! Has completado todo el ejercicio con éxito.";
+
+                if (mistakes.length > 0) {
+                  // Limpieza cosmética
+                  const topicsToReview = mistakes
+                    .map((m) => {
+                      return m
+                        .replace(
+                          /How do you say|in English\?|What does|mean\?/gi,
+                          "",
+                        )
+                        .replace("Say:", "")
+                        .replace(/[¿?]/g, "")
+                        .trim();
+                    })
+                    .slice(0, 3);
+
+                  finalMsg = `¡Muy buen trabajo! Terminamos por hoy. Solo te sugiero repasar estas expresiones: ${topicsToReview.join(", ")}.`;
+                }
+
+                console.log("🏁 [FINISH] " + finalMsg);
+                await speakDynamicText(finalMsg);
                 stopConversation();
               }
             }
