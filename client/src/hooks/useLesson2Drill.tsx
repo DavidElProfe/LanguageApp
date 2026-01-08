@@ -308,33 +308,29 @@ export function useLesson2Drill({ part = 1 } = {}) {
             if (analysisResult.shouldAdvance) {
               const nextIdx = currentQuestionIndexRef.current + 1;
 
-              // ✅ USAMOS LA LISTA CORRECTA
+             
               if (nextIdx < LESSON_2_VOICE_MVP_QUESTIONS.length) {
                 currentQuestionIndexRef.current = nextIdx;
                 console.log("⏩ [ADVANCE] Playing next question...");
                 await speakQuestionByIndex(nextIdx);
               } else {
-                // 📝 3. FIN DE LECCIÓN: FEEDBACK SUAVE Y PEDAGÓGICO
                 const mistakes = Array.from(sessionMistakesRef.current);
                 let finalMsg =
                   "¡Excelente sesión! Has completado todo el ejercicio con éxito.";
 
                 if (mistakes.length > 0) {
-                  // Limpieza cosmética para que suene natural
                   const topicsToReview = mistakes
                     .map((m) => {
-                      // Quitamos el "Say:" o signos para que quede solo la frase/concepto
                       return m
                         .replace(/How do you say/gi, "")
                         .replace(/in English\?/gi, "")
                         .replace(/What is/gi, "")
                         .replace("Say:", "")
-                        .replace(/[¿?]/g, "") // Quita signos de interrogación
+                        .replace(/[¿?]/g, "") 
                         .trim();
                     })
-                    .slice(0, 3); // Máximo 3 para no saturar
-
-                  // 💡 NUEVO GUIÓN: Más constructivo, menos "acusador"
+                    .slice(0, 3); 
+                  
                   finalMsg = `¡Muy buen trabajo! Terminamos por hoy. Solo te sugiero repasar estas expresiones: ${topicsToReview.join(", ")}.`;
                 }
 
