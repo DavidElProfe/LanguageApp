@@ -11,14 +11,15 @@ import {
 } from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
 
-// HOOKS
-import { useLesson1Drill } from "@/hooks/useLesson1Drill";
-import { useLesson2Drill } from "@/hooks/useLesson2Drill";
+// 1. LIMPIEZA DE HOOKS
+// Ya no necesitamos importar cada lección por separado
+import { useGenericDrill } from "@/hooks/useGenericDrill";
 
 // COMPONENTES
 import { VoiceOrb } from "@/components/VoiceOrb";
 import ConversationTranscript from "@/components/ConversationTranscript";
 
+// Mantenemos tu lista de opciones (puedes hacerla dinámica luego importando LESSONS_CONFIG)
 const LESSON_OPTIONS = [
   {
     value: 1,
@@ -52,10 +53,10 @@ export default function VoiceChat() {
   const [, setLocation] = useLocation();
   const [selectedLesson, setSelectedLesson] = useState(getInitialLesson());
 
-  const lesson1 = useLesson1Drill();
-  const lesson2 = useLesson2Drill();
-  const activeHook = selectedLesson === 2 ? lesson2 : lesson1;
-
+  // 2. EL MOTOR GENÉRICO 🪄
+  // En lugar de cargar todos los hooks y elegir cuál usar con un IF,
+  // simplemente llamamos al genérico con el ID seleccionado.
+  // Cuando cambias el ID en el dropdown, este hook se reinicia solo con la nueva config.
   const {
     connectionState,
     errorMessage,
@@ -63,8 +64,9 @@ export default function VoiceChat() {
     startConversation,
     stopConversation,
     isThinking,
-  } = activeHook as any;
+  } = useGenericDrill(selectedLesson);
 
+  // Mapeo de estados visuales para el Orbe
   const getVisualState = () => {
     if (connectionState === "error") return "error";
     if (connectionState === "idle" || connectionState === "ended")
@@ -90,9 +92,7 @@ export default function VoiceChat() {
           </Button>
         </div>
 
-        {/* 👇 AQUÍ ESTÁ LA CLAVE: max-w-5xl 
-            Esto hace que la tarjeta sea MUCHO más ancha 
-        */}
+        {/* TARJETA PRINCIPAL (max-w-5xl) */}
         <div className="w-full max-w-5xl bg-card rounded-[2rem] shadow-xl border border-border relative overflow-hidden flex flex-col h-[88vh] min-h-[600px] transition-colors duration-300">
           {/* Decoración superior */}
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-400 via-purple-500 to-emerald-400 z-10 opacity-80" />
@@ -100,12 +100,14 @@ export default function VoiceChat() {
           {/* 1. SECCIÓN SUPERIOR: ORBE (Fija) */}
           <div className="w-full p-6 bg-card z-10 flex flex-col items-center shrink-0 border-b border-border/50">
             <div className="w-full max-w-md mx-auto mb-4">
-              {/* SELECTOR (Lo mantengo centrado y acotado para que no se estire feo) */}
+              {/* SELECTOR DE LECCIÓN */}
               <Select
                 value={selectedLesson.toString()}
-                onValueChange={(value) =>
-                  setSelectedLesson(parseInt(value, 10))
-                }
+                onValueChange={(value) => {
+                  // Si estaba hablando, cortamos para evitar bugs
+                  if (connectionState === "active") stopConversation();
+                  setSelectedLesson(parseInt(value, 10));
+                }}
                 disabled={
                   connectionState !== "idle" &&
                   connectionState !== "ended" &&
@@ -145,7 +147,6 @@ export default function VoiceChat() {
 
           {/* 2. SECCIÓN INFERIOR: TRANSCRIPT (Ancho completo) */}
           <div className="w-full flex-1 overflow-y-auto bg-muted/10 scroll-smooth">
-            {/* Contenedor interno para limitar el ancho del texto y que sea legible (max-w-3xl es ideal para lectura) */}
             <div className="w-full h-full max-w-4xl mx-auto p-6 md:p-8">
               {messages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center p-6 opacity-40 space-y-4">
@@ -153,7 +154,7 @@ export default function VoiceChat() {
                     <Mic className="h-8 w-8 text-muted-foreground" />
                   </div>
                   <p className="text-base text-muted-foreground italic">
-                    Presiona "Start" para comenzar la clase.
+                    Presiona "Start Conversation" para comenzar.
                   </p>
                 </div>
               ) : (
@@ -163,7 +164,7 @@ export default function VoiceChat() {
                     connectionState={connectionState}
                     isThinking={isThinking}
                   />
-                  <div className="h-12" /> {/* Espacio extra al final */}
+                  <div className="h-12" />
                 </>
               )}
             </div>
