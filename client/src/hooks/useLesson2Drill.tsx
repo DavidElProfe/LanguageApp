@@ -194,7 +194,14 @@ export function useLesson2Drill({ part = 1 } = {}) {
       audioRef.current = audio;
 
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       mediaStreamRef.current = stream;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
