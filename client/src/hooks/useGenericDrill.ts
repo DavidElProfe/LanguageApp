@@ -185,7 +185,15 @@ export function useGenericDrill(lessonId: number) {
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
 
       // Micrófono
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1, // Mono (mejor para voz)
+          echoCancellation: true, // Evita que se escuche a sí misma
+          noiseSuppression: true, // Elimina ruido de fondo
+          autoGainControl: true, // Nivela el volumen si hablas bajito
+        },
+      });
+
       mediaStreamRef.current = stream;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
