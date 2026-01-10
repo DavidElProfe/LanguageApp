@@ -7,6 +7,8 @@ import {
   insertAiSessionMessageSchema,
 } from "@shared/schema";
 import { generateAIReply } from "./lib/ai";
+// ✅ IMPORT NUEVO: Cliente de OpenAI para el resumen
+import { openai } from "./lib/openai";
 import * as schema from "@shared/schema";
 import { desc } from "drizzle-orm";
 import { z } from "zod";
@@ -208,6 +210,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             id: data.user.id,
             displayName: email.split("@")[0],
             email: email,
+            locale: "en",
             locale: "en",
           });
         }
@@ -906,6 +909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // ✅ AHORA SÍ COINCIDE EL NOMBRE
       const { seedDatabase } = await import("../drizzle/seedCourses");
       await seedDatabase();
 
@@ -919,6 +923,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Seed error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // =================================================================
+  // ✅ NUEVO ENDPOINT: Generador de Resúmenes (GPT-4o-mini)
+  // =================================================================
+  app.post("/api/ai/generate-summary", async (req, res) => {
+    try {
+      const { lessonTitle, mistakes } = req.body;
+
+      if (!mistakes || mistakes.length === 0) {
+        return res.json({
+          summary:
+            "¡Increíble desempeño! No detecté errores de pronunciación ni gramática en esta sesión. Tu inglés está sonando muy fluido. ¡Sigue así!",
+        });
+      }
+
+      const mistakesText = mistakes.join(", ");
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Eres un profesor de inglés experto, amable y motivador. 
+            Tu alumno acaba de terminar una lección de práctica oral.
+
+            Tu tarea:
+            1. Analiza la lista de errores que tuvo el alumno.
+            2. Genera un feedback FINAL de cierre (máximo 3 oraciones cortas).
+            3. El tono debe ser: "Buen trabajo, pero fíjate en esto".
+            4. Escribe en ESPAÑOL.
+            5. No hagas listas, haz un párrafo conversacional.
+            `,
+          },
+          {
+            role: "user",
+            content: `Lección: "${lessonTitle}".
+            Errores cometidos: [${mistakesText}].
+            Genera el feedback de cierre.`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+
+      const summary = response.choices[0].message.content;
+      res.json({ summary });
+    } catch (error: any) {
+      console.error("Error generating summary:", error);
+      res.status(500).json({ error: "Failed to generate summary" });
     }
   });
 

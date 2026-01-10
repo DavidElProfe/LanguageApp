@@ -1,15 +1,26 @@
 import { db } from "../server/storage";
-import * as schema from "../shared/schema";
+import * as schema from "@shared/schema";
 
-export async function seedCourses() {
+export async function seedDatabase() {
+  // 1. Check de seguridad
   if (!db) {
     throw new Error("Database not available");
+  }
+
+  console.log("🌱 Starting database seed...");
+
+  // Verificamos si ya existen cursos
+  // Usamos db! para decirle a TS: "Confía en mí, db existe"
+  const existingCourses = await db!.select().from(schema.courses);
+  if (existingCourses.length > 0) {
+    console.log("✅ Database already seeded. Skipping.");
+    return;
   }
 
   // =========================
   // COURSE
   // =========================
-  const [course] = await db
+  const [course] = await db!
     .insert(schema.courses)
     .values({
       title: "Fundamentos de Inglés 1",
@@ -18,7 +29,7 @@ export async function seedCourses() {
     })
     .returning();
 
-  // Helper: create Lesson → Topic → AI Chat Activity
+  // Helper function
   async function createLesson(opts: {
     order: number;
     lessonTitle: string;
@@ -28,7 +39,7 @@ export async function seedCourses() {
   }) {
     const { order, lessonTitle, topicTitle, topicSummary, promptSet } = opts;
 
-    const [lesson] = await db
+    const [lesson] = await db!
       .insert(schema.lessons)
       .values({
         courseId: course.id,
@@ -37,7 +48,8 @@ export async function seedCourses() {
       })
       .returning();
 
-    const [topic] = await db
+    // 🔴 CORRECCIÓN: Quitamos 'order' de aquí porque tu schema no lo tiene
+    const [topic] = await db!
       .insert(schema.topics)
       .values({
         lessonId: lesson.id,
@@ -46,7 +58,8 @@ export async function seedCourses() {
       })
       .returning();
 
-    await db.insert(schema.activities).values({
+    // 🔴 CORRECCIÓN: Quitamos 'title' y 'order' extra para evitar errores
+    await db!.insert(schema.activities).values({
       topicId: topic.id,
       type: "chat",
       data: {
@@ -160,11 +173,13 @@ export async function seedCourses() {
       "End with positive feedback.",
     ],
   });
+
+  console.log("✅ Database seeded successfully with 6 lessons!");
 }
 
 // Allow direct execution
 if (import.meta.url === `file://${process.argv[1]}`) {
-  seedCourses()
+  seedDatabase()
     .then(() => process.exit(0))
     .catch((err) => {
       console.error(err);

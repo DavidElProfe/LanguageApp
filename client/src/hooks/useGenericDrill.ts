@@ -2,7 +2,9 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { aiApi } from "../lib/api";
 import { LESSONS_CONFIG } from "@/data/lesson";
 
-// TIPOS
+// ============================================================================
+// TYPES
+// ============================================================================
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
 
 export interface ConversationMessage {
@@ -12,39 +14,44 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
-// CACHÉ GLOBAL (Fuera del hook para que persista si desmontas y montas rápido)
-const audioCache = new Map<string, Blob>(); // Clave: "lessonId-questionIndex"
+// Global Audio Cache (Persists across re-renders)
+const audioCache = new Map<string, Blob>();
 
+/**
+ * Main hook for managing voice interactive lessons.
+ * Handles WebRTC connection, VAD (Voice Activity Detection), and lesson lifecycle.
+ */
 export function useGenericDrill(lessonId: number) {
-  // 1. CARGA DE CONFIGURACIÓN
   const config = LESSONS_CONFIG[lessonId];
 
-  // 2. ESTADOS
+  // --------------------------------------------------------------------------
+  // 1. STATE & REFS
+  // --------------------------------------------------------------------------
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
 
-  // 3. REFERENCIAS
+  // WebRTC & Media
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  // Estado mutable del Drill
+  // Session Logic
   const currentQuestionIndexRef = useRef<number>(0);
   const sessionMistakesRef = useRef<Set<string>>(new Set());
   const sessionIdRef = useRef<string | null>(null);
 
-  // Flags de control
+  // Flags
   const isProcessingRef = useRef<boolean>(false);
   const isTTSSpeakingRef = useRef<boolean>(false);
   const timingRef = useRef<{ stopSpeaking: number }>({ stopSpeaking: 0 });
 
-  // -------------------------------------------------------------------
-  // HELPERS (Audio, TTS, Mensajes)
-  // -------------------------------------------------------------------
+  // --------------------------------------------------------------------------
+  // 2. HELPER FUNCTIONS (Audio & UI)
+  // --------------------------------------------------------------------------
 
   const addMessage = (role: "user" | "assistant", text: string) => {
     setMessages((prev) => [
@@ -61,11 +68,13 @@ export function useGenericDrill(lessonId: number) {
         resolve();
         URL.revokeObjectURL(url);
       };
-      audio.play().catch((e) => console.error("Error playing audio:", e));
+      audio.play().catch((e) => console.error("🔊 [Audio Error]:", e));
     });
   };
 
-  // TTS DINÁMICO (Feedback del Tutor)
+  /**
+   * Generates dynamic audio for immediate tutor feedback.
+   */
   const speakDynamicText = async (text: string) => {
     if (isTTSSpeakingRef.current) return;
     addMessage("assistant", text);
@@ -79,33 +88,34 @@ export function useGenericDrill(lessonId: number) {
       const blob = await response.blob();
       await playAudioBlob(blob, "Dynamic Feedback");
     } catch (e) {
-      console.error(e);
+      console.error("❌ [TTS Error]", e);
     } finally {
       isTTSSpeakingRef.current = false;
     }
   };
 
-  // TTS DE PREGUNTAS (Con Caché y Clave única por lección)
+  /**
+   * Plays a predefined question (using cache if available).
+   */
   const speakQuestionByIndex = async (index: number) => {
     if (!config) return;
     if (isTTSSpeakingRef.current) return;
 
-    const text = config.questions[index]; // 👈 Usamos las preguntas de la config
+    const text = config.questions[index];
     if (!text) return;
 
     addMessage("assistant", text);
     isTTSSpeakingRef.current = true;
 
-    // Clave única para el caché: "1-0" (Lección 1, Pregunta 0)
     const cacheKey = `${lessonId}-${index}`;
 
     try {
       let blob = audioCache.get(cacheKey);
       if (blob) {
-        console.log(`⚡ [CACHE HIT] ${cacheKey} ready.`);
+        console.log(`⚡ [CACHE HIT] Question ${index}`);
         await playAudioBlob(blob, `Question ${index}`);
       } else {
-        console.log(`🐢 [CACHE MISS] Downloading ${cacheKey}...`);
+        console.log(`🐢 [CACHE MISS] Downloading Question ${index}...`);
         const response = await fetch("/api/tts/speak", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -116,13 +126,15 @@ export function useGenericDrill(lessonId: number) {
         await playAudioBlob(blob, `Question ${index}`);
       }
     } catch (e) {
-      console.error(e);
+      console.error("❌ [TTS Error]", e);
     } finally {
       isTTSSpeakingRef.current = false;
     }
   };
 
-  // PREFETCH (Carga la siguiente pregunta en background)
+  /**
+   * Silently downloads the next audio to reduce latency.
+   */
   const prefetchNextQuestion = async (currentIndex: number) => {
     if (!config) return;
     const nextIdx = currentIndex + 1;
@@ -139,15 +151,16 @@ export function useGenericDrill(lessonId: number) {
       });
       const blob = await response.blob();
       audioCache.set(cacheKey, blob);
-      console.log(`🏁 [PREFETCH DONE] ${cacheKey} cached.`);
+      console.log(`📥 [PREFETCH] Question ${nextIdx} cached.`);
     } catch (e) {
-      console.warn(e);
+      console.warn("⚠️ [Prefetch Warning]", e);
     }
   };
 
-  // -------------------------------------------------------------------
-  // CORE: START CONVERSATION
-  // -------------------------------------------------------------------
+  // --------------------------------------------------------------------------
+  // 3. CORE LOGIC (WebRTC Connection)
+  // --------------------------------------------------------------------------
+
   const startConversation = useCallback(async () => {
     if (!config) {
       setErrorMessage("Lesson config not found");
@@ -160,11 +173,11 @@ export function useGenericDrill(lessonId: number) {
       setIsThinking(false);
       setErrorMessage("");
 
-      // Reset de estado local
+      // Reset local state
       sessionMistakesRef.current.clear();
-      currentQuestionIndexRef.current = 0; // O leer de URL si quieres restaurar esa feature
+      currentQuestionIndexRef.current = 0;
 
-      // 1. Obtener Token (Tu endpoint actual)
+      // 1. Get Session Token
       const tokenRes = await fetch(
         `/api/assistant/simple-session?lesson=${lessonId}`,
       );
@@ -178,51 +191,48 @@ export function useGenericDrill(lessonId: number) {
       // Audio Element (HTML)
       const audio = document.createElement("audio");
       audio.autoplay = true;
-      audio.setAttribute("playsinline", "true"); // Fix iOS
+      audio.setAttribute("playsinline", "true");
       document.body.appendChild(audio);
       audioRef.current = audio;
 
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
 
-      // Micrófono
+      // Microphone Configuration
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          channelCount: 1, // Mono (mejor para voz)
-          echoCancellation: true, // Evita que se escuche a sí misma
-          noiseSuppression: true, // Elimina ruido de fondo
-          autoGainControl: true, // Nivela el volumen si hablas bajito
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
       });
 
       mediaStreamRef.current = stream;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
-      // Data Channel
+      // Data Channel for events
       const dc = pc.createDataChannel("oai-events");
       dcRef.current = dc;
 
-      // ---------------------------------------------------------------
-      // 🔥 EVENTO: CONEXIÓN ABIERTA
-      // ---------------------------------------------------------------
+      // --- HANDLER: Connection Opened ---
       dc.onopen = () => {
         setConnectionState("active");
 
-        // Enviamos la configuración ESPECÍFICA de esta lección
+        // Send initial configuration (System Prompt)
         dc.send(
           JSON.stringify({
             type: "session.update",
             session: {
-              // 👇 AQUÍ SE INYECTA EL SYSTEM PROMPT DE lessons.ts
               instructions: config.systemPrompt,
               tool_choice: "none",
               temperature: 0.6,
-              voice: "shimmer", // Aseguramos voz consistente
+              voice: "shimmer",
               input_audio_transcription: { model: "whisper-1" },
             },
           }),
         );
 
-        // Iniciar el Drill con la primera pregunta
+        // Start drill with a small delay for stability
         setTimeout(() => {
           console.log(`🚀 [START] Lesson ${lessonId} - "${config.title}"`);
           speakQuestionByIndex(0);
@@ -230,9 +240,7 @@ export function useGenericDrill(lessonId: number) {
         }, 500);
       };
 
-      // ---------------------------------------------------------------
-      // 🔥 EVENTO: MENSAJES DEL DATA CHANNEL
-      // ---------------------------------------------------------------
+      // --- HANDLER: Incoming Messages ---
       dc.onmessage = async (event) => {
         let data;
         try {
@@ -241,21 +249,21 @@ export function useGenericDrill(lessonId: number) {
           return;
         }
 
-        // A. Usuario empieza a hablar
+        // A. User started speaking (VAD)
         if (data.type === "input_audio_buffer.speech_started") {
           console.log("🎤 [USER START]");
           prefetchNextQuestion(currentQuestionIndexRef.current);
           return;
         }
 
-        // B. Usuario deja de hablar
+        // B. User stopped speaking
         if (data.type === "input_audio_buffer.speech_stopped") {
           timingRef.current.stopSpeaking = performance.now();
           console.log("🛑 [USER STOP]");
-          dc.send(JSON.stringify({ type: "response.cancel" })); // Cancelamos respuesta automática de OpenAI
+          dc.send(JSON.stringify({ type: "response.cancel" }));
         }
 
-        // C. Transcripción lista (WHISPER)
+        // C. Transcription completed (Whisper)
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
@@ -267,7 +275,7 @@ export function useGenericDrill(lessonId: number) {
 
           const currentQ = config.questions[currentQuestionIndexRef.current];
 
-          // Filtro anti-eco (Si el usuario repite la pregunta exacta)
+          // Anti-echo filter (if user repeats the question)
           if (
             currentQ &&
             userText
@@ -277,7 +285,7 @@ export function useGenericDrill(lessonId: number) {
             return;
           }
 
-          // --- INICIO EVALUACIÓN BACKEND ---
+          // --- BACKEND EVALUATION ---
           isProcessingRef.current = true;
           addMessage("user", userText);
           setIsThinking(true);
@@ -288,32 +296,31 @@ export function useGenericDrill(lessonId: number) {
               currentQuestion: currentQ || "",
               questionIndex: currentQuestionIndexRef.current,
               sessionId: sessionIdRef.current || "unknown",
-              lessonNumber: lessonId, // 👈 Pasamos el ID dinámico
+              lessonNumber: lessonId,
             });
 
-            // Feedback Auditivo (Si el tutor quiere corregir)
+            // Tutor feedback
             if (analysisResult.tutorInstruction) {
               await speakDynamicText(analysisResult.tutorInstruction);
             }
 
-            // Guardar Error
+            // Error tracking
             if (analysisResult.decision === "correct_and_retry") {
               if (currentQ) sessionMistakesRef.current.add(currentQ);
             }
 
-            // Avanzar Pregunta
+            // Advance question
             if (analysisResult.shouldAdvance) {
               const nextIdx = currentQuestionIndexRef.current + 1;
               if (nextIdx < config.questions.length) {
                 currentQuestionIndexRef.current = nextIdx;
                 await speakQuestionByIndex(nextIdx);
               } else {
-                // FIN DE LA LECCIÓN
                 handleLessonEnd();
               }
             }
           } catch (error) {
-            console.error("Eval Error:", error);
+            console.error("❌ [Eval Error]", error);
           } finally {
             isProcessingRef.current = false;
             setIsThinking(false);
@@ -321,7 +328,7 @@ export function useGenericDrill(lessonId: number) {
         }
       };
 
-      // 3. Negociación SDP
+      // 3. SDP Negotiation
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       const sdpRes = await fetch(
@@ -341,24 +348,34 @@ export function useGenericDrill(lessonId: number) {
         sdp: await sdpRes.text(),
       });
     } catch (err: any) {
-      console.error(err);
+      console.error("❌ [Connection Failed]", err);
       setErrorMessage("Connection failed: " + err.message);
       setConnectionState("error");
     }
-  }, [lessonId, config]); // Se recrea si cambia la lección
+  }, [lessonId, config]);
 
-  // Manejo del Fin de Lección
+  // --------------------------------------------------------------------------
+  // 4. CLEANUP & ENDING
+  // --------------------------------------------------------------------------
+
   const handleLessonEnd = async () => {
     const mistakes = Array.from(sessionMistakesRef.current);
-    let finalMsg = "Great job! You finished the lesson perfectly.";
 
+    // Fallback message while AI thinks
+    console.log("🧠 [AI] Generating Summary...");
+    let finalMsg = "Great job! You finished the lesson.";
+
+    // Logic for sending errors to AI summary (if endpoint is available)
     if (mistakes.length > 0) {
-      // Limpieza simple de textos de preguntas para que suene natural
       const reviewList = mistakes
         .map((m) => m.replace(/How do you say|in English\?/gi, "").trim())
         .slice(0, 3);
       finalMsg = `Good practice! Try to review these words: ${reviewList.join(", ")}.`;
     }
+
+    // Uncomment if using the new summary endpoint:
+    // const aiSummary = await aiApi.generateSessionSummary(config.title, mistakes);
+    // if (aiSummary) finalMsg = aiSummary;
 
     await speakDynamicText(finalMsg);
     stopConversation();
@@ -373,7 +390,6 @@ export function useGenericDrill(lessonId: number) {
     setIsThinking(false);
   }, []);
 
-  // Cleanup
   useEffect(() => {
     return () => stopConversation();
   }, [stopConversation]);

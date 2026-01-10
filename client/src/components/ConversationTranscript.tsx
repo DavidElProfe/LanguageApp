@@ -1,8 +1,15 @@
 import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Bot, User } from "lucide-react";
-// Mantenemos tu importación de tipos si la necesitas, o usamos la interfaz local abajo
-import type { ConversationMessage } from "@/hooks/useRealtimeConversation";
+
+// ✅ 1. DEFINICIÓN LOCAL (Rompemos la dependencia con el archivo viejo)
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  timestamp: number;
+  isFinal?: boolean; // Opcional, para manejar estados intermedios
+}
 
 interface ConversationTranscriptProps {
   messages: ConversationMessage[];
@@ -17,20 +24,20 @@ export default function ConversationTranscript({
 }: ConversationTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // 1. TU LÓGICA DE FILTRADO (Muy importante mantenerla)
-  // Solo mostramos mensajes finales del usuario para evitar duplicados visuales
+  // 2. FILTRADO
   const visibleMessages = messages.filter((message) => {
-    return message.role !== "user" || (message as any).isFinal !== false;
+    // Como ya definimos isFinal en la interfaz, no hace falta usar 'as any'
+    return message.role !== "user" || message.isFinal !== false;
   });
 
-  // 2. AUTO-SCROLL
+  // 3. AUTO-SCROLL
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [visibleMessages.length, isThinking]);
 
-  // Si no hay nada que mostrar y no está pensando, no renderizamos nada (o un placeholder)
+  // Render condicional
   if (
     visibleMessages.length === 0 &&
     !isThinking &&
@@ -44,7 +51,6 @@ export default function ConversationTranscript({
       <AnimatePresence initial={false}>
         {visibleMessages.map((msg, index) => {
           const isUser = msg.role === "user";
-          // Usamos el ID del mensaje o el índice como fallback
           const key = msg.id || index;
 
           return (
@@ -79,17 +85,11 @@ export default function ConversationTranscript({
                 <div
                   className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${
                     isUser
-                      ? "bg-primary text-primary-foreground rounded-tr-none" // Usuario (Azul/Negro)
-                      : "bg-card border border-border text-card-foreground rounded-tl-none" // IA (Blanco/Gris)
+                      ? "bg-primary text-primary-foreground rounded-tr-none"
+                      : "bg-card border border-border text-card-foreground rounded-tl-none"
                   }`}
                 >
                   <p className="whitespace-pre-wrap">{msg.text}</p>
-
-                  {/* Timestamp discreto (opcional) */}
-                  {/* <span className="text-[10px] opacity-50 block mt-1 text-right">
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span> 
-                  */}
                 </div>
               </div>
             </motion.div>
@@ -97,7 +97,7 @@ export default function ConversationTranscript({
         })}
       </AnimatePresence>
 
-      {/* 3. BURBUJA DE "PENSANDO..." (Animada) */}
+      {/* BURBUJA DE "PENSANDO..." */}
       {isThinking && (
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -118,7 +118,6 @@ export default function ConversationTranscript({
         </motion.div>
       )}
 
-      {/* Elemento invisible para anclar el scroll */}
       <div ref={scrollRef} className="h-1" />
     </div>
   );

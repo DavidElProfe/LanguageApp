@@ -1,5 +1,6 @@
 import { LESSON_1_QUESTIONS } from "../../../server/prompts/Lesson1Questions";
 import { LESSON_2_VOICE_MVP_QUESTIONS } from "../../../server/prompts/lesson2VoiceMvpQuestions";
+import { LESSON_3_QUESTIONS } from "../../../server/prompts/Lesson3Questions";
 
 export interface LessonConfig {
   id: number;
@@ -62,6 +63,13 @@ const LESSON_2_RULES = `
 - **Filter:** If audio sounds like complex technical terms, map it to simple adjectives (e.g., "Biometrics" -> "Big" or "Blue" depending on context).
 `;
 
+const LESSON_3_RULES = `
+- Context: RESTAURANTS & FOOD.
+- Expected Vocabulary: Menu, Check/Bill, Water, Chicken, Meat, Salad, Coffee, Pizza.
+- Prices: Dollars, cheap, expensive.
+- **Filter:** Bias towards food items. If audio sounds like "Fish", it's likely "Fish" not "Wish".
+`;
+
 // ==============================================================================
 // 3. CONFIGURACIÓN FINAL
 // ==============================================================================
@@ -78,5 +86,11 @@ export const LESSONS_CONFIG: Record<number, LessonConfig> = {
     title: "Lección 2: Práctica Completa (MVP)",
     systemPrompt: buildSystemPrompt("MVP Drill: Mixed Topics", LESSON_2_RULES),
     questions: LESSON_2_VOICE_MVP_QUESTIONS,
+  },
+  3: {
+    id: 3,
+    title: "Lección 3: Comida y Restaurantes",
+    systemPrompt: buildSystemPrompt("Restaurants & Food", LESSON_3_RULES),
+    questions: LESSON_3_QUESTIONS, // ✅ AHORA SÍ, LIMPIO
   },
 };
