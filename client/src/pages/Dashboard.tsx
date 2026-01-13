@@ -6,6 +6,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardApi } from '@/lib/api';
 import StatCard from '@/components/StatCard';
+import { UserStatsCard } from '@/components/userStatsCard'; // Asegúrate de que la mayúscula coincida con tu archivo
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import { Button } from '@/components/ui/button';
@@ -91,6 +92,14 @@ export default function Dashboard() {
               {isLoading ? 'Cargando...' : getMotivationalMessage()}
             </p>
           </div>
+
+          {/* 👇 AQUÍ VA TU NUEVA TARJETA GAMIFICADA 👇 */}
+          <div className="mb-8">
+            <UserStatsCard userId={user.id} />
+            
+            
+          </div>
+          {/* 👆 FIN DE LO NUEVO 👆 */}
 
           {isLoading ? (
             <div className="text-center py-12">

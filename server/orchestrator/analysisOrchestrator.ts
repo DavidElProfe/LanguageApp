@@ -3,7 +3,7 @@
  *
  * Coordinates the multi-agent analysis flow:
  * 1. Receives transcription
- * 2. SANITIZES transcription (Fixes phonetic errors like Sun/Son)
+ * 2. SANITIZES transcription (Fixes phonetic errors like Sun/Son) -> SKIPPED FOR LESSON 3
  * 3. Runs Grammar + Verifier agents IN PARALLEL
  * 4. Passes results to Judge agent
  * 5. Returns final decision
@@ -29,7 +29,7 @@ const PHONETIC_FIXES: Record<string, string> = {
   bitch: "beach",
   shit: "sheet",
   pies: "peace",
-  //"i ": "eye ",
+  // "i ": "eye ",
   sea: "see",
 };
 
@@ -79,11 +79,18 @@ export class AnalysisOrchestrator {
     try {
       // 1. 🛑 INTERCEPTAR Y CORREGIR (La Trampa)
       const originalTranscription = input.transcription;
-      const sanitizedTranscription = this.sanitizeTranscription(
-        originalTranscription,
-      );
+      let sanitizedTranscription = originalTranscription;
 
-      // Creamos un nuevo input "limpio" para engañar a los agentes
+      // 🛡️ LÓGICA DE SEGURIDAD:
+      // Si NO es la Lección 3 (es decir, lección 1, 2, etc.), aplicamos la limpieza normal.
+      // Si ES la Lección 3, nos saltamos esto para no romper los números/precios.
+      if (input.lessonNumber !== 3) {
+        sanitizedTranscription = this.sanitizeTranscription(originalTranscription);
+      } else {
+        console.log("🛡️ [ORCHESTRATOR] Lesson 3 detected: Skipping sanitization (Raw Input mode).");
+      }
+
+      // Creamos un nuevo input "limpio" (o crudo si es L3) para los agentes
       const cleanInput = {
         ...input,
         transcription: sanitizedTranscription,
@@ -94,6 +101,8 @@ export class AnalysisOrchestrator {
         `\n🌊 [FLUJO INICIO] Sesión: ${input.sessionId} | Pregunta: "${input.currentQuestion}"`,
       );
       console.log(`🗣️ [INPUT ORIGINAL]: "${originalTranscription}"`);
+      
+      // Solo mostramos el log de corrección si realmente hubo un cambio
       if (originalTranscription !== sanitizedTranscription) {
         console.log(`✨ [INPUT CORREGIDO]: "${sanitizedTranscription}"`);
       }
