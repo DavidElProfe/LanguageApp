@@ -14,7 +14,6 @@ import LessonDetail from "@/pages/LessonDetail";
 import TopicDetail from "@/pages/TopicDetail";
 import TopicFlashcards from "@/pages/TopicFlashcards";
 import AIChatActivity from "@/pages/AIChatActivity";
-
 import SimpleMode from "@/pages/SimpleMode";
 import VoiceChat from "@/pages/VoiceChat";
 import TopicRedirect from "@/pages/TopicRedirect";
@@ -83,11 +82,14 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/admin" component={Admin} />
+      
+      {/* ✅ MANTENEMOS ESTA RUTA PARA LAS PRUEBAS */}
       <Route path="/voice-chat">
         <ProtectedRoute>
           <VoiceChat />
         </ProtectedRoute>
       </Route>
+
       <Route path="/simple">
         <ProtectedRoute>
           <SimpleMode />
