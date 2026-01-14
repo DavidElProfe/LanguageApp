@@ -7,8 +7,10 @@ import {
   insertAiSessionMessageSchema,
 } from "@shared/schema";
 import { generateAIReply } from "./lib/ai";
+// ✅ IMPORT NUEVO: Cliente de OpenAI para el resumen
+import { openai } from "./lib/openai";
 import * as schema from "@shared/schema";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { assistantRouter } from "./assistantRoutes";
 import { ttsRouter } from "./ttsRoutes";
@@ -906,6 +908,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
+      // ✅ AHORA SÍ COINCIDE EL NOMBRE
       const { seedDatabase } = await import("../drizzle/seedCourses");
       await seedDatabase();
 
@@ -919,6 +922,159 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Seed error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // =================================================================
+  // ✅ NUEVO ENDPOINT: Generador de Resúmenes (GPT-4o-mini)
+  // =================================================================
+  app.post("/api/ai/generate-summary", async (req, res) => {
+    try {
+      const { lessonTitle, mistakes } = req.body;
+
+      if (!mistakes || mistakes.length === 0) {
+        return res.json({
+          summary:
+            "¡Increíble desempeño! No detecté errores de pronunciación ni gramática en esta sesión. Tu inglés está sonando muy fluido. ¡Sigue así!",
+        });
+      }
+
+      const mistakesText = mistakes.join(", ");
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `Eres un profesor de inglés experto, amable y motivador. 
+            Tu alumno acaba de terminar una lección de práctica oral.
+
+            Tu tarea:
+            1. Analiza la lista de errores que tuvo el alumno.
+            2. Genera un feedback FINAL de cierre (máximo 3 oraciones cortas).
+            3. El tono debe ser: "Buen trabajo, pero fíjate en esto".
+            4. Escribe en ESPAÑOL.
+            5. No hagas listas, haz un párrafo conversacional.
+            `,
+          },
+          {
+            role: "user",
+            content: `Lección: "${lessonTitle}".
+            Errores cometidos: [${mistakesText}].
+            Genera el feedback de cierre.`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+
+      const summary = response.choices[0].message.content;
+      res.json({ summary });
+    } catch (error: any) {
+      console.error("Error generating summary:", error);
+      res.status(500).json({ error: "Failed to generate summary" });
+    }
+  });
+
+  // ===========================================================================
+  // 🏍️ ENDPOINT SIDECAR (Prueba de fusión de datos)
+  // ===========================================================================
+  app.get("/api/me", async (req, res) => {
+    // Leemos el ID desde la URL para probar fácil en el navegador
+    // Ejemplo: http://localhost:5000/api/me?userId=TU_UUID_AQUI
+    const userId = req.query.userId as string;
+
+    if (!userId) {
+      return res.status(400).json({ message: "Falta ?userId=... en la URL" });
+    }
+
+    try {
+      // 1. Buscamos al usuario en la tabla vieja (profiles)
+      // Usamos db.query si está disponible, o db.select
+      const profile = await db!.query.profiles.findFirst({
+        where: eq(schema.profiles.id, userId),
+      });
+
+      if (!profile) {
+        return res
+          .status(404)
+          .json({ message: "Usuario no encontrado en profiles" });
+      }
+
+      // 2. Buscamos su mochila de stats (Tabla nueva user_stats)
+      let stats = await db!.query.userStats.findFirst({
+        where: eq(schema.userStats.userId, userId),
+      });
+
+      // ✨ AUTO-MAGIC: Si no tiene stats, las creamos GRATIS
+      if (!stats) {
+        console.log(`✨ Creando stats iniciales para el usuario...`);
+        [stats] = await db!.insert(schema.userStats)
+          .values({
+            userId: userId,
+            totalXp: 0,
+            currentStreak: 0,
+            role: "student",
+            // Los defaults del schema se encargarán del resto
+          })
+          .returning();
+      }
+
+      // 3. Devolvemos todo fusionado 🤝
+      res.json({
+        ...profile,
+        stats: stats, // ¡Aquí viajan tus nuevos poderes! (XP, Preferencias, etc)
+      });
+    } catch (error: any) {
+      console.error("Error en /api/me:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ===========================================================================
+  // 🆙 ENDPOINT DE PROGRESO (Sumar XP)
+  // ===========================================================================
+  app.post("/api/progress/xp", async (req, res) => {
+    // Recibimos userId y la cantidad de XP a sumar
+    const { userId, amount } = req.body;
+
+    if (!userId || !amount) {
+      return res.status(400).json({ message: "Faltan datos (userId, amount)" });
+    }
+
+    try {
+      // 1. Leemos las stats actuales
+      const currentStats = await db!.query.userStats.findFirst({
+        where: eq(schema.userStats.userId, userId),
+      });
+
+      if (!currentStats) {
+        return res
+          .status(404)
+          .json({ message: "Usuario sin stats inicializadas" });
+      }
+
+      // 2. Calculamos los nuevos valores
+      const newXp = (currentStats.totalXp || 0) + amount;
+
+      // Lógica simple de racha: Si la última actividad no fue hoy, sumamos racha
+      // (Por ahora simplificado: siempre suma 1 si interactúas)
+      const newStreak = (currentStats.currentStreak || 0) + 1;
+
+      // 3. Guardamos en la DB
+      await db!.update(schema.userStats)
+        .set({
+          totalXp: newXp,
+          currentStreak: newStreak,
+          lastActivityAt: new Date(), // Actualizamos la fecha
+        })
+        .where(eq(schema.userStats.userId, userId));
+
+      res.json({ success: true, newXp, newStreak });
+      console.log(`✅ ${amount} XP sumados a ${userId}. Total: ${newXp}`);
+    } catch (error: any) {
+      console.error("Error sumando XP:", error);
+      res.status(500).json({ message: error.message });
     }
   });
 

@@ -12,9 +12,14 @@ import {
 } from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
 
-// IMPORTAMOS LOS HOOKS
+// ✅ IMPORTAMOS EL AUTH CONTEXT (Necesitamos el ID del usuario para dar XP)
+import { useAuth } from "@/contexts/AuthContext";
+
+// ✅ IMPORTAMOS LOS HOOKS INDIVIDUALES
 import { useLesson1Drill } from "@/hooks/useLesson1Drill";
 import { useLesson2Drill } from "@/hooks/useLesson2Drill";
+import { useLesson3Drill } from "@/hooks/useLesson3Drill";
+
 import ConversationTranscript from "@/components/ConversationTranscript";
 
 const LESSON_OPTIONS = [
@@ -28,49 +33,52 @@ const LESSON_OPTIONS = [
     label: "Lección 2: Describir cosas y preferencias",
     available: true,
   },
-  { value: 3, label: "Lección 3: Comida, compras y números", available: false },
-  {
-    value: 4,
-    label: "Lección 4: Actividades diarias (yo/tú)",
-    available: false,
+  { 
+    value: 3, 
+    label: "Lección 3: Comida, compras y preferencias", 
+    available: true // ✅ Activada
   },
-  { value: 5, label: "Lección 5: Presente simple (él/ella)", available: false },
+  { value: 4, label: "Lección 4: Actividades diarias", available: false },
+  { value: 5, label: "Lección 5: Presente simple", available: false },
   { value: 6, label: "Lección 6: Restaurantes", available: false },
   { value: 7, label: "Lección 7: Hoteles y viajes", available: false },
-  {
-    value: 8,
-    label: "Lección 8: Preferencias y estilo de vida",
-    available: false,
-  },
-  { value: 9, label: "Lección 9: Rutinas y orden temporal", available: false },
-  { value: 10, label: "Lección 10: Verbos comunes y repaso", available: false },
+  { value: 8, label: "Lección 8: Estilo de vida", available: false },
+  { value: 9, label: "Lección 9: Rutinas", available: false },
+  { value: 10, label: "Lección 10: Repaso", available: false },
 ];
 
-// 🛠️ DEV TOOL: Esta función lee la URL para saber qué lección cargar
 const getInitialLesson = () => {
   if (typeof window === "undefined") return 1;
   const params = new URLSearchParams(window.location.search);
   const lesson = params.get("lesson");
-  // Si dice ?lesson=2, devuelve 2. Si no dice nada, devuelve 1.
   const lessonNum = lesson ? parseInt(lesson, 10) : 1;
   return isNaN(lessonNum) ? 1 : lessonNum;
 };
 
 export default function VoiceChat() {
   const [, setLocation] = useLocation();
+  const { user } = useAuth(); // 👈 Obtenemos el usuario
 
-  // 🛠️ AQUÍ USAMOS LA FUNCIÓN PARA EL VALOR INICIAL
   const [selectedLesson, setSelectedLesson] = useState(getInitialLesson());
-
   const [showDebugChat] = useState(true);
-  const [recapRequested, setRecapRequested] = useState(false);
+  
+  // Nuevo estado para el loading de salida (guardando XP)
+  const [isFinishing, setIsFinishing] = useState(false);
 
   // Inicializamos los hooks
   const lesson1 = useLesson1Drill();
   const lesson2 = useLesson2Drill();
+  const lesson3 = useLesson3Drill();
 
   // Elegimos cuál usar según el estado
-  const activeHook = selectedLesson === 2 ? lesson2 : lesson1;
+  let activeHook;
+  if (selectedLesson === 3) {
+    activeHook = lesson3;
+  } else if (selectedLesson === 2) {
+    activeHook = lesson2;
+  } else {
+    activeHook = lesson1;
+  }
 
   const {
     connectionState,
@@ -81,8 +89,34 @@ export default function VoiceChat() {
     isThinking,
   } = activeHook as any;
 
-  const requestSessionRecap = () => {
-    console.log("Recap no disponible en Drill Mode por el momento");
+  // 💰 FUNCIÓN MAESTRA: Terminar y Cobrar XP
+  const handleFinishLesson = async () => {
+    if (!user) return;
+    
+    setIsFinishing(true);
+    
+    // 1. Cortar la llamada para que deje de grabar
+    stopConversation();
+
+    try {
+      // 2. Llamar al backend para sumar XP
+      // (Le damos 50 XP por terminar una práctica)
+      await fetch("/api/progress/xp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, amount: 50 }),
+      });
+
+      // Pequeña pausa para que se sienta natural
+      setTimeout(() => {
+        // 3. Volver al Dashboard para ver el progreso
+        setLocation("/dashboard"); 
+      }, 500);
+
+    } catch (error) {
+      console.error("Error guardando progreso:", error);
+      setIsFinishing(false);
+    }
   };
 
   return (
@@ -92,12 +126,12 @@ export default function VoiceChat() {
       <main className="flex-1 container mx-auto px-4 py-8">
         <Button
           variant="ghost"
-          onClick={() => setLocation("/home")}
+          onClick={() => setLocation("/dashboard")}
           className="mb-6"
           data-testid="button-back-home"
         >
           <ArrowLeft className="mr-2 h-4 w-4" />
-          Ver cursos
+          Volver al Panel
         </Button>
 
         <div className="max-w-2xl mx-auto">
@@ -256,24 +290,28 @@ export default function VoiceChat() {
                   )}
 
                   <div className="grid grid-cols-2 gap-3">
+                    {/* 👇 BOTÓN DE TERMINAR CON XP */}
                     <Button
-                      onClick={() => {
-                        setRecapRequested(true);
-                        requestSessionRecap();
-                      }}
+                      onClick={handleFinishLesson}
+                      disabled={isFinishing}
                       variant="outline"
                       size="lg"
-                      disabled={recapRequested}
                       data-testid="button-finish-recap"
                     >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Terminar
+                      {isFinishing ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <LogOut className="mr-2 h-4 w-4" />
+                      )}
+                      {isFinishing ? "Guardando..." : "Terminar"}
                     </Button>
+                    
                     <Button
                       onClick={stopConversation}
                       variant="destructive"
                       size="lg"
                       data-testid="button-end-conversation"
+                      disabled={isFinishing}
                     >
                       Cancelar
                     </Button>

@@ -1,8 +1,10 @@
-import { useState, useRef, useCallback } from "react";
-// ✅ IMPORT CORREGIDO
-import { LESSON_2_VOICE_MVP_QUESTIONS } from "../../../server/prompts/lesson2VoiceMvpQuestions";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { aiApi } from "../lib/api";
+import { LESSONS_CONFIG } from "@/data/lesson";
 
+// ============================================================================
+// TYPES
+// ============================================================================
 type ConnectionState = "idle" | "connecting" | "active" | "ended" | "error";
 
 export interface ConversationMessage {
@@ -12,45 +14,44 @@ export interface ConversationMessage {
   timestamp: number;
 }
 
-// CACHÉ GLOBAL
-const audioCache = new Map<number, Blob>();
+// Global Audio Cache (Persists across re-renders)
+const audioCache = new Map<string, Blob>();
 
-// 🛠️ DEV TOOL: Función para leer el índice desde la URL
-// Ejemplo: .../?lesson=2&q=5  -> Arranca en la pregunta 6
-const getStartIndex = () => {
-  if (typeof window === "undefined") return 0;
-  const params = new URLSearchParams(window.location.search);
-  const q = params.get("q");
-  const idx = q ? parseInt(q, 10) : 0;
-  return isNaN(idx) ? 0 : idx;
-};
+/**
+ * Main hook for managing voice interactive lessons.
+ * Handles WebRTC connection, VAD (Voice Activity Detection), and lesson lifecycle.
+ */
+export function useGenericDrill(lessonId: number) {
+  const config = LESSONS_CONFIG[lessonId];
 
-export function useLesson2Drill({ part = 1 } = {}) {
+  // --------------------------------------------------------------------------
+  // 1. STATE & REFS
+  // --------------------------------------------------------------------------
   const [connectionState, setConnectionState] =
     useState<ConnectionState>("idle");
   const [errorMessage, setErrorMessage] = useState("");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
 
+  // WebRTC & Media
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
 
-  const messagesRef = useRef<ConversationMessage[]>([]);
-
-  // 🛠️ INICIALIZAMOS CON EL VALOR DE LA URL
-  const currentQuestionIndexRef = useRef<number>(getStartIndex());
-
-  // 📝 1. LIBRETA DE ERRORES (Set para evitar duplicados)
+  // Session Logic
+  const currentQuestionIndexRef = useRef<number>(0);
   const sessionMistakesRef = useRef<Set<string>>(new Set());
-
-  const isProcessingRef = useRef<boolean>(false);
-  const isTTSSpeakingRef = useRef<boolean>(false);
   const sessionIdRef = useRef<string | null>(null);
 
-  // CRONÓMETRO DE DEBUG
+  // Flags
+  const isProcessingRef = useRef<boolean>(false);
+  const isTTSSpeakingRef = useRef<boolean>(false);
   const timingRef = useRef<{ stopSpeaking: number }>({ stopSpeaking: 0 });
+
+  // --------------------------------------------------------------------------
+  // 2. HELPER FUNCTIONS (Audio & UI)
+  // --------------------------------------------------------------------------
 
   const addMessage = (role: "user" | "assistant", text: string) => {
     setMessages((prev) => [
@@ -60,7 +61,6 @@ export function useLesson2Drill({ part = 1 } = {}) {
   };
 
   const playAudioBlob = (blob: Blob, label: string): Promise<void> => {
-    const startPlay = performance.now();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     return new Promise<void>((resolve) => {
@@ -68,132 +68,136 @@ export function useLesson2Drill({ part = 1 } = {}) {
         resolve();
         URL.revokeObjectURL(url);
       };
-      audio.onplay = () => {
-        console.log(
-          `🔊 [AUDIO PLAY] ${label} started. Latency from play call: ${(performance.now() - startPlay).toFixed(0)}ms`,
-        );
-      };
-      audio.play().catch((e) => console.error("Error playing audio:", e));
+      audio.play().catch((e) => console.error("🔊 [Audio Error]:", e));
     });
   };
 
+  /**
+   * Generates dynamic audio for immediate tutor feedback.
+   */
   const speakDynamicText = async (text: string) => {
     if (isTTSSpeakingRef.current) return;
     addMessage("assistant", text);
     isTTSSpeakingRef.current = true;
     try {
-      const t0 = performance.now();
-      console.log(`REQUESTING DYNAMIC TTS...`);
       const response = await fetch("/api/tts/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
       });
-      const t1 = performance.now();
-      console.log(`⬇️ [TTS DOWNLOAD] Took ${(t1 - t0).toFixed(0)}ms`);
-
       const blob = await response.blob();
       await playAudioBlob(blob, "Dynamic Feedback");
     } catch (e) {
-      console.error(e);
+      console.error("❌ [TTS Error]", e);
     } finally {
       isTTSSpeakingRef.current = false;
     }
   };
 
+  /**
+   * Plays a predefined question (using cache if available).
+   */
   const speakQuestionByIndex = async (index: number) => {
+    if (!config) return;
     if (isTTSSpeakingRef.current) return;
 
-    // ✅ USAMOS LA LISTA CORRECTA
-    const text = LESSON_2_VOICE_MVP_QUESTIONS[index];
+    const text = config.questions[index];
     if (!text) return;
 
     addMessage("assistant", text);
     isTTSSpeakingRef.current = true;
 
+    const cacheKey = `${lessonId}-${index}`;
+
     try {
-      let blob = audioCache.get(index);
+      let blob = audioCache.get(cacheKey);
       if (blob) {
-        console.log(`⚡ [CACHE HIT] Q${index} ready immediately.`);
+        console.log(`⚡ [CACHE HIT] Question ${index}`);
         await playAudioBlob(blob, `Question ${index}`);
       } else {
-        console.log(`🐢 [CACHE MISS] Downloading Q${index}...`);
-        const t0 = performance.now();
+        console.log(`🐢 [CACHE MISS] Downloading Question ${index}...`);
         const response = await fetch("/api/tts/speak", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
         });
-        const t1 = performance.now();
-        console.log(`⬇️ [TTS DOWNLOAD] Took ${(t1 - t0).toFixed(0)}ms`);
         blob = await response.blob();
-        audioCache.set(index, blob);
+        audioCache.set(cacheKey, blob);
         await playAudioBlob(blob, `Question ${index}`);
       }
     } catch (e) {
-      console.error(e);
+      console.error("❌ [TTS Error]", e);
     } finally {
       isTTSSpeakingRef.current = false;
     }
   };
 
+  /**
+   * Silently downloads the next audio to reduce latency.
+   */
   const prefetchNextQuestion = async (currentIndex: number) => {
+    if (!config) return;
     const nextIdx = currentIndex + 1;
-    // ✅ USAMOS LA LISTA CORRECTA
-    if (
-      nextIdx >= LESSON_2_VOICE_MVP_QUESTIONS.length ||
-      audioCache.has(nextIdx)
-    )
-      return;
+    const cacheKey = `${lessonId}-${nextIdx}`;
 
-    console.log(`🚀 [PREFETCH START] Q${nextIdx}`);
+    if (nextIdx >= config.questions.length || audioCache.has(cacheKey)) return;
+
     try {
-      const text = LESSON_2_VOICE_MVP_QUESTIONS[nextIdx];
-      await fetch("/api/tts/speak", {
+      const text = config.questions[nextIdx];
+      const response = await fetch("/api/tts/speak", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, voice: "nova", speed: 1.0 }),
-      })
-        .then((res) => res.blob())
-        .then((blob) => {
-          audioCache.set(nextIdx, blob);
-          console.log(`🏁 [PREFETCH DONE] Q${nextIdx} cached.`);
-        });
+      });
+      const blob = await response.blob();
+      audioCache.set(cacheKey, blob);
+      console.log(`📥 [PREFETCH] Question ${nextIdx} cached.`);
     } catch (e) {
-      console.warn(e);
+      console.warn("⚠️ [Prefetch Warning]", e);
     }
   };
 
-  const startConversation = async () => {
+  // --------------------------------------------------------------------------
+  // 3. CORE LOGIC (WebRTC Connection)
+  // --------------------------------------------------------------------------
+
+  const startConversation = useCallback(async () => {
+    if (!config) {
+      setErrorMessage("Lesson config not found");
+      return;
+    }
+
     try {
       setConnectionState("connecting");
       setMessages([]);
       setIsThinking(false);
+      setErrorMessage("");
 
-      // Limpiamos caché (excepto si queremos mantener estado, pero mejor limpiar para evitar bugs)
-      audioCache.clear();
-      sessionMistakesRef.current.clear(); // Limpiamos libreta de errores
+      // Reset local state
+      sessionMistakesRef.current.clear();
+      currentQuestionIndexRef.current = 0;
 
+      // 1. Get Session Token
       const tokenRes = await fetch(
-        `/api/assistant/simple-session?lesson=2&part=${part}`,
+        `/api/assistant/simple-session?lesson=${lessonId}`,
       );
       const response = await tokenRes.json();
       sessionIdRef.current = response.sessionId;
 
+      // 2. Setup WebRTC
       const pc = new RTCPeerConnection();
       pcRef.current = pc;
 
+      // Audio Element (HTML)
       const audio = document.createElement("audio");
       audio.autoplay = true;
-
-      // 📱 FIX PARA MÓVILES: playsinline evita pantalla negra/bloqueos en iOS
       audio.setAttribute("playsinline", "true");
-      audio.setAttribute("webkit-playsinline", "true");
-
       document.body.appendChild(audio);
       audioRef.current = audio;
 
       pc.ontrack = (e) => (audio.srcObject = e.streams[0]);
+
+      // Microphone Configuration
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -202,35 +206,41 @@ export function useLesson2Drill({ part = 1 } = {}) {
           autoGainControl: true,
         },
       });
+
       mediaStreamRef.current = stream;
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
+      // Data Channel for events
       const dc = pc.createDataChannel("oai-events");
       dcRef.current = dc;
 
+      // --- HANDLER: Connection Opened ---
       dc.onopen = () => {
         setConnectionState("active");
+
+        // Send initial configuration (System Prompt)
         dc.send(
           JSON.stringify({
             type: "session.update",
             session: {
-              instructions:
-                "System: You are a passive transcriber. Listen and transcribe. Do NOT speak.",
+              instructions: config.systemPrompt,
               tool_choice: "none",
               temperature: 0.6,
+              voice: "shimmer",
+              input_audio_transcription: { model: "whisper-1" },
             },
           }),
         );
 
-        // 🛠️ USAMOS EL ÍNDICE REF (que puede venir de la URL)
+        // Start drill with a small delay for stability
         setTimeout(() => {
-          const startIdx = currentQuestionIndexRef.current;
-          console.log(`🚀 [START L2] Starting at index: ${startIdx}`);
-          speakQuestionByIndex(startIdx);
-          prefetchNextQuestion(startIdx);
+          console.log(`🚀 [START] Lesson ${lessonId} - "${config.title}"`);
+          speakQuestionByIndex(0);
+          prefetchNextQuestion(0);
         }, 500);
       };
 
+      // --- HANDLER: Incoming Messages ---
       dc.onmessage = async (event) => {
         let data;
         try {
@@ -239,125 +249,86 @@ export function useLesson2Drill({ part = 1 } = {}) {
           return;
         }
 
+        // A. User started speaking (VAD)
         if (data.type === "input_audio_buffer.speech_started") {
-          console.log("🎤 [USER START SPEAKING]");
+          console.log("🎤 [USER START]");
           prefetchNextQuestion(currentQuestionIndexRef.current);
           return;
         }
 
+        // B. User stopped speaking
         if (data.type === "input_audio_buffer.speech_stopped") {
           timingRef.current.stopSpeaking = performance.now();
-          console.log("🛑 [USER STOP SPEAKING] Waiting for transcript...");
+          console.log("🛑 [USER STOP]");
           dc.send(JSON.stringify({ type: "response.cancel" }));
         }
 
+        // C. Transcription completed (Whisper)
         if (
           data.type === "conversation.item.input_audio_transcription.completed"
         ) {
           const userText = data.transcript.trim();
-          const tTranscript = performance.now();
-          console.log(
-            `📝 [TRANSCRIPT READY] "${userText}" (+${(tTranscript - timingRef.current.stopSpeaking).toFixed(0)}ms from stop)`,
-          );
+          console.log(`📝 [TRANSCRIPT] "${userText}"`);
 
           if (!userText || isTTSSpeakingRef.current || isProcessingRef.current)
             return;
 
-          // ✅ USAMOS LA LISTA CORRECTA
-          const currentQ =
-            LESSON_2_VOICE_MVP_QUESTIONS[currentQuestionIndexRef.current];
+          const currentQ = config.questions[currentQuestionIndexRef.current];
+
+          // Anti-echo filter (if user repeats the question)
           if (
             currentQ &&
             userText
               .toLowerCase()
               .includes(currentQ.toLowerCase().substring(0, 15))
-          )
+          ) {
             return;
+          }
 
+          // --- BACKEND EVALUATION ---
           isProcessingRef.current = true;
           addMessage("user", userText);
           setIsThinking(true);
 
           try {
-            console.log("🧠 [AGENTS START] Sending to backend...");
-            const tStartAnalysis = performance.now();
-
             const analysisResult = await aiApi.evaluateResponse({
               transcription: userText,
               currentQuestion: currentQ || "",
               questionIndex: currentQuestionIndexRef.current,
               sessionId: sessionIdRef.current || "unknown",
-              lessonNumber: 2,
+              lessonNumber: lessonId,
             });
 
-            const tEndAnalysis = performance.now();
-            console.log(
-              `🧠 [AGENTS END] Took ${(tEndAnalysis - tStartAnalysis).toFixed(0)}ms`,
-            );
-
+            // Tutor feedback
             if (analysisResult.tutorInstruction) {
-              console.log("🗣️ [FEEDBACK] Playing correction...");
               await speakDynamicText(analysisResult.tutorInstruction);
             }
 
-            // 📝 2. SI HAY ERROR, LO GUARDAMOS
+            // Error tracking
             if (analysisResult.decision === "correct_and_retry") {
-              if (currentQ) {
-                sessionMistakesRef.current.add(currentQ);
-                console.log(`📝 [MISTAKE LOGGED] Added: "${currentQ}"`);
-                console.log(
-                  "📉 [CURRENT MISTAKES LIST]:",
-                  Array.from(sessionMistakesRef.current),
-                );
-              }
+              if (currentQ) sessionMistakesRef.current.add(currentQ);
             }
 
+            // Advance question
             if (analysisResult.shouldAdvance) {
               const nextIdx = currentQuestionIndexRef.current + 1;
-
-             
-              if (nextIdx < LESSON_2_VOICE_MVP_QUESTIONS.length) {
+              if (nextIdx < config.questions.length) {
                 currentQuestionIndexRef.current = nextIdx;
-                console.log("⏩ [ADVANCE] Playing next question...");
                 await speakQuestionByIndex(nextIdx);
               } else {
-                const mistakes = Array.from(sessionMistakesRef.current);
-                let finalMsg =
-                  "¡Excelente sesión! Has completado todo el ejercicio con éxito.";
-
-                if (mistakes.length > 0) {
-                  const topicsToReview = mistakes
-                    .map((m) => {
-                      return m
-                        .replace(/How do you say/gi, "")
-                        .replace(/in English\?/gi, "")
-                        .replace(/What is/gi, "")
-                        .replace("Say:", "")
-                        .replace(/[¿?]/g, "") 
-                        .trim();
-                    })
-                    .slice(0, 3); 
-                  
-                  finalMsg = `¡Muy buen trabajo! Terminamos por hoy. Solo te sugiero repasar estas expresiones: ${topicsToReview.join(", ")}.`;
-                }
-
-                console.log("🏁 [FINISH] " + finalMsg);
-                await speakDynamicText(finalMsg);
-                stopConversation();
+                handleLessonEnd();
               }
             }
           } catch (error) {
-            console.error("Analysis Error:", error);
+            console.error("❌ [Eval Error]", error);
           } finally {
             isProcessingRef.current = false;
             setIsThinking(false);
-            console.log(
-              `🏁 [TURN COMPLETED] Total time: ${(performance.now() - timingRef.current.stopSpeaking).toFixed(0)}ms`,
-            );
           }
         }
       };
 
+      // 3. SDP Negotiation
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       const sdpRes = await fetch(
@@ -376,20 +347,52 @@ export function useLesson2Drill({ part = 1 } = {}) {
         type: "answer",
         sdp: await sdpRes.text(),
       });
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("❌ [Connection Failed]", err);
+      setErrorMessage("Connection failed: " + err.message);
       setConnectionState("error");
     }
+  }, [lessonId, config]);
+
+  // --------------------------------------------------------------------------
+  // 4. CLEANUP & ENDING
+  // --------------------------------------------------------------------------
+
+  const handleLessonEnd = async () => {
+    const mistakes = Array.from(sessionMistakesRef.current);
+
+    // Fallback message while AI thinks
+    console.log("🧠 [AI] Generating Summary...");
+    let finalMsg = "Great job! You finished the lesson.";
+
+    // Logic for sending errors to AI summary (if endpoint is available)
+    if (mistakes.length > 0) {
+      const reviewList = mistakes
+        .map((m) => m.replace(/How do you say|in English\?/gi, "").trim())
+        .slice(0, 3);
+      finalMsg = `Good practice! Try to review these words: ${reviewList.join(", ")}.`;
+    }
+
+    // Uncomment if using the new summary endpoint:
+    // const aiSummary = await aiApi.generateSessionSummary(config.title, mistakes);
+    // if (aiSummary) finalMsg = aiSummary;
+
+    await speakDynamicText(finalMsg);
+    stopConversation();
   };
 
-  const stopConversation = () => {
+  const stopConversation = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     dcRef.current?.close();
     pcRef.current?.close();
     audioRef.current?.remove();
     setConnectionState("ended");
     setIsThinking(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    return () => stopConversation();
+  }, [stopConversation]);
 
   return {
     connectionState,

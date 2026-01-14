@@ -115,7 +115,50 @@ export const aiSessionMessages = pgTable("ai_session_messages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Insert schemas
+// =============================================================================
+// 👇 LO NUEVO: TABLA "SIDECAR" (User Stats & Preferences)
+// =============================================================================
+// Esta tabla guarda todo lo extra para NO TOCAR la tabla 'profiles'
+export const userStats = pgTable("user_stats", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  
+  // Vínculo con el usuario existente (Foreign Key)
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+
+  // 🛡️ Roles & Permisos (Aquí definimos si es admin)
+  role: text("role").default("student").notNull(),
+
+  // 💰 Monetización
+  stripeCustomerId: text("stripe_customer_id"),
+  subscriptionStatus: text("subscription_status").default("free").notNull(),
+
+  // 🎮 Gamificación
+  totalXp: integer("total_xp").default(0).notNull(),
+  currentStreak: integer("current_streak").default(0).notNull(),
+  lastActivityAt: timestamp("last_activity_at"),
+
+  // ⚙️ Preferencias (JSON)
+  preferences: jsonb("preferences").$type<{
+    theme: "light" | "dark";
+    voiceSpeed: number;
+    accent: "US" | "UK";
+    notifications: boolean;
+  }>().default({ 
+    theme: "light", 
+    voiceSpeed: 1.0, 
+    accent: "US",
+    notifications: true
+  }).notNull(),
+
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// =============================================================================
+// INSERT SCHEMAS
+// =============================================================================
+
 export const insertProfileSchema = createInsertSchema(profiles).omit({
   id: true,
   createdAt: true,
@@ -167,7 +210,16 @@ export const insertAiSessionMessageSchema = createInsertSchema(
   createdAt: true,
 });
 
-// Types
+// 👇 Schema para la nueva tabla
+export const insertUserStatsSchema = createInsertSchema(userStats).omit({
+  id: true,
+  updatedAt: true
+});
+
+// =============================================================================
+// TYPES
+// =============================================================================
+
 export type InsertProfile = z.infer<typeof insertProfileSchema>;
 export type Profile = typeof profiles.$inferSelect;
 
@@ -198,3 +250,7 @@ export type InsertAiSessionMessage = z.infer<
   typeof insertAiSessionMessageSchema
 >;
 export type AiSessionMessage = typeof aiSessionMessages.$inferSelect;
+
+// 👇 Tipos para la nueva tabla
+export type UserStats = typeof userStats.$inferSelect;
+export type InsertUserStats = z.infer<typeof insertUserStatsSchema>;
