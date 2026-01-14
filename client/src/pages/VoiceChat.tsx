@@ -12,13 +12,11 @@ import {
 } from "@/components/ui/select";
 import Navbar from "@/components/Navbar";
 
-// ✅ IMPORTAMOS EL AUTH CONTEXT (Necesitamos el ID del usuario para dar XP)
+// ✅ IMPORTAMOS EL AUTH CONTEXT
 import { useAuth } from "@/contexts/AuthContext";
 
-// ✅ IMPORTAMOS LOS HOOKS INDIVIDUALES
-import { useLesson1Drill } from "@/hooks/useLesson1Drill";
-import { useLesson2Drill } from "@/hooks/useLesson2Drill";
-import { useLesson3Drill } from "@/hooks/useLesson3Drill";
+// ✅ IMPORTAMOS EL NUEVO HOOK UNIFICADO
+import { useGenericDrill } from "@/hooks/useGenericDrill";
 
 import ConversationTranscript from "@/components/ConversationTranscript";
 
@@ -36,9 +34,13 @@ const LESSON_OPTIONS = [
   { 
     value: 3, 
     label: "Lección 3: Comida, compras y preferencias", 
-    available: true // ✅ Activada
+    available: true 
   },
-  { value: 4, label: "Lección 4: Actividades diarias", available: false },
+  { 
+    value: 4, 
+    label: "Lección 4: Actividades diarias y Rutina", 
+    available: true // ✅ ¡AHORA ESTÁ DISPONIBLE!
+  },
   { value: 5, label: "Lección 5: Presente simple", available: false },
   { value: 6, label: "Lección 6: Restaurantes", available: false },
   { value: 7, label: "Lección 7: Hoteles y viajes", available: false },
@@ -57,29 +59,16 @@ const getInitialLesson = () => {
 
 export default function VoiceChat() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth(); // 👈 Obtenemos el usuario
+  const { user } = useAuth();
 
   const [selectedLesson, setSelectedLesson] = useState(getInitialLesson());
   const [showDebugChat] = useState(true);
   
-  // Nuevo estado para el loading de salida (guardando XP)
   const [isFinishing, setIsFinishing] = useState(false);
 
-  // Inicializamos los hooks
-  const lesson1 = useLesson1Drill();
-  const lesson2 = useLesson2Drill();
-  const lesson3 = useLesson3Drill();
-
-  // Elegimos cuál usar según el estado
-  let activeHook;
-  if (selectedLesson === 3) {
-    activeHook = lesson3;
-  } else if (selectedLesson === 2) {
-    activeHook = lesson2;
-  } else {
-    activeHook = lesson1;
-  }
-
+  // 🚀 LA MAGIA: Una sola línea para manejarlas a todas
+  // El hook automáticamente carga la configuración correcta (preguntas, sistema, modo estricto)
+  // basándose en el ID que eliges en el selector.
   const {
     connectionState,
     errorMessage,
@@ -87,7 +76,7 @@ export default function VoiceChat() {
     startConversation,
     stopConversation,
     isThinking,
-  } = activeHook as any;
+  } = useGenericDrill(selectedLesson);
 
   // 💰 FUNCIÓN MAESTRA: Terminar y Cobrar XP
   const handleFinishLesson = async () => {
@@ -95,21 +84,19 @@ export default function VoiceChat() {
     
     setIsFinishing(true);
     
-    // 1. Cortar la llamada para que deje de grabar
+    // 1. Cortar la llamada
     stopConversation();
 
     try {
-      // 2. Llamar al backend para sumar XP
-      // (Le damos 50 XP por terminar una práctica)
+      // 2. Dar XP (50 XP por sesión)
       await fetch("/api/progress/xp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: user.id, amount: 50 }),
       });
 
-      // Pequeña pausa para que se sienta natural
+      // 3. Volver al Dashboard
       setTimeout(() => {
-        // 3. Volver al Dashboard para ver el progreso
         setLocation("/dashboard"); 
       }, 500);
 
@@ -154,7 +141,7 @@ export default function VoiceChat() {
                 <ul className="list-disc list-inside space-y-2 text-sm">
                   <li>El tutor te hará preguntas sencillas</li>
                   <li>Responde en inglés con oraciones cortas</li>
-                  <li>Si no entiendes, el tutor repetirá</li>
+                  <li>Si no entiendes, di "No entendí"</li>
                 </ul>
               </div>
 

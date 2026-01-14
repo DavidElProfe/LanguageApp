@@ -1,6 +1,8 @@
 import { LESSON_1_QUESTIONS } from "../../../server/prompts/Lesson1Questions";
 import { LESSON_2_VOICE_MVP_QUESTIONS } from "../../../server/prompts/lesson2VoiceMvpQuestions";
 import { LESSON_3_QUESTIONS } from "../../../server/prompts/Lesson3Questions";
+// ✅ AGREGAMOS LA IMPORTACIÓN DE LA LECCIÓN 4
+import { LESSON_4_QUESTIONS } from "../../../server/prompts/Lesson4Questions";
 
 export interface LessonConfig {
   id: number;
@@ -10,7 +12,7 @@ export interface LessonConfig {
 }
 
 // ==============================================================================
-// 1. EL CEREBRO MEJORADO (Aquí está la solución a la mala transcripción)
+// 1. EL CEREBRO MEJORADO
 // ==============================================================================
 const CORE_MULTI_AGENT_SYSTEM = `
 ROLE: You are "The Language School" AI Tutor engine. 
@@ -32,7 +34,6 @@ YOUR PRIMARY DIRECTIVES:
    - Do not hallucinate conversation. Wait for the system to prompt you.
 `;
 
-// Función para ensamblar el prompt final de cada lección
 function buildSystemPrompt(lessonTitle: string, contextRules: string) {
   return `
 ${CORE_MULTI_AGENT_SYSTEM}
@@ -45,7 +46,7 @@ ${contextRules}
 }
 
 // ==============================================================================
-// 2. REGLAS DE CONTEXTO (Pistas para que Whisper no se pierda)
+// 2. REGLAS DE CONTEXTO
 // ==============================================================================
 
 const LESSON_1_RULES = `
@@ -64,10 +65,20 @@ const LESSON_2_RULES = `
 `;
 
 const LESSON_3_RULES = `
-- Context: RESTAURANTS & FOOD.
+- Context: RESTAURANTS & FOOD (Ordering, Prices, Quantities).
 - Expected Vocabulary: Menu, Check/Bill, Water, Chicken, Meat, Salad, Coffee, Pizza.
 - Prices: Dollars, cheap, expensive.
 - **Filter:** Bias towards food items. If audio sounds like "Fish", it's likely "Fish" not "Wish".
+`;
+
+// ✅ REGLAS PARA LECCIÓN 4
+const LESSON_4_RULES = `
+- Context: DAILY ROUTINE, ORDINALS & PREFERENCES.
+- Expected Vocabulary: First, Second, Third... Tenth.
+- Routine verbs: Wake up, shower, coffee, work, sleep.
+- Preferences: I like, I don't like, I prefer.
+- Food/Drink: Soda, Juice, Beer, Whiskey, Fries, Sandwich.
+- **Filter:** If audio sounds like a number, map to Ordinal (e.g., "One" -> "First" if context fits).
 `;
 
 // ==============================================================================
@@ -91,6 +102,13 @@ export const LESSONS_CONFIG: Record<number, LessonConfig> = {
     id: 3,
     title: "Lección 3: Comida y Restaurantes",
     systemPrompt: buildSystemPrompt("Restaurants & Food", LESSON_3_RULES),
-    questions: LESSON_3_QUESTIONS, // ✅ AHORA SÍ, LIMPIO
+    questions: LESSON_3_QUESTIONS,
+  },
+  // ✅ AQUÍ ESTÁ LA NUEVA LECCIÓN 4
+  4: {
+    id: 4,
+    title: "Lección 4: Rutina y Preferencias",
+    systemPrompt: buildSystemPrompt("Daily Routine & Preferences", LESSON_4_RULES),
+    questions: LESSON_4_QUESTIONS,
   },
 };
