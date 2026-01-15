@@ -6,12 +6,15 @@
  * 2. SANITIZES transcription (Fixes phonetic errors like Sun/Son) -> SKIPPED FOR LESSON 3
  * 3. Runs Grammar + Verifier agents IN PARALLEL
  * 4. Passes results to Judge agent
- * 5. Returns final decision
+ * 5. AUDITS the interaction (Quality Gate) <-- ✅ NUEVO PASO AGREGADO
+ * 6. Returns final decision
  */
 
 import { grammarAgent } from "../agents/grammarAgent";
 import { verifierAgent } from "../agents/verifierAgent";
 import { judgeAgent } from "../agents/judgeAgent";
+// ✅ 1. IMPORTAMOS EL AUDITOR
+import { auditInteraction } from "../services/interactionAuditor";
 import type {
   AnalysisInput,
   AnalysisOrchestratorOutput,
@@ -20,7 +23,6 @@ import type {
 } from "../agents/types/analysisTypes";
 
 // 🔧 MAPA DE CORRECCIONES FONÉTICAS FORZADAS
-// Esto engaña a la IA antes de que pueda juzgar mal.
 const PHONETIC_FIXES: Record<string, string> = {
   "the sun": "the son",
   "a sun": "a son",
@@ -29,34 +31,22 @@ const PHONETIC_FIXES: Record<string, string> = {
   bitch: "beach",
   shit: "sheet",
   pies: "peace",
-  // "i ": "eye ",
   sea: "see",
 };
 
 export class AnalysisOrchestrator {
-  /**
-   * Limpia la transcripción de Whisper usando fuerza bruta.
-   * Si encuentra "sun", lo cambia a "son" para evitar falsos negativos.
-   */
   private sanitizeTranscription(text: string): string {
     let cleanText = text.toLowerCase();
-
     for (const [wrong, right] of Object.entries(PHONETIC_FIXES)) {
-      // Usamos \b (Word Boundary) para no romper palabras como "Sunday"
       const regex = new RegExp(`\\b${wrong}\\b`, "gi");
       if (regex.test(cleanText)) {
         console.log(`🔧 [AUTO-FIX] Replaced "${wrong}" with "${right}"`);
         cleanText = cleanText.replace(regex, right);
       }
     }
-
-    // Restaurar mayúscula inicial
     return cleanText.charAt(0).toUpperCase() + cleanText.slice(1);
   }
 
-  /**
-   * Main entry point for analyzing student responses.
-   */
   async analyze(
     input: AnalysisInput,
     includeDebug = false,
@@ -64,7 +54,6 @@ export class AnalysisOrchestrator {
     const startTime = Date.now();
     const agentsInvoked: AnalysisAgentName[] = [];
 
-    // Validate input
     if (!input.transcription || input.transcription.trim().length < 2) {
       return {
         success: true,
@@ -77,37 +66,31 @@ export class AnalysisOrchestrator {
     }
 
     try {
-      // 1. 🛑 INTERCEPTAR Y CORREGIR (La Trampa)
+      // 1. 🛑 INTERCEPTAR Y CORREGIR
       const originalTranscription = input.transcription;
       let sanitizedTranscription = originalTranscription;
 
-      // 🛡️ LÓGICA DE SEGURIDAD:
-      // Si NO es la Lección 3 (es decir, lección 1, 2, etc.), aplicamos la limpieza normal.
-      // Si ES la Lección 3, nos saltamos esto para no romper los números/precios.
       if (input.lessonNumber !== 3) {
         sanitizedTranscription = this.sanitizeTranscription(originalTranscription);
       } else {
-        console.log("🛡️ [ORCHESTRATOR] Lesson 3 detected: Skipping sanitization (Raw Input mode).");
+        console.log("🛡️ [ORCHESTRATOR] Lesson 3 detected: Skipping sanitization.");
       }
 
-      // Creamos un nuevo input "limpio" (o crudo si es L3) para los agentes
       const cleanInput = {
         ...input,
         transcription: sanitizedTranscription,
       };
 
-      // LOG DE INICIO
       console.log(
         `\n🌊 [FLUJO INICIO] Sesión: ${input.sessionId} | Pregunta: "${input.currentQuestion}"`,
       );
       console.log(`🗣️ [INPUT ORIGINAL]: "${originalTranscription}"`);
       
-      // Solo mostramos el log de corrección si realmente hubo un cambio
       if (originalTranscription !== sanitizedTranscription) {
         console.log(`✨ [INPUT CORREGIDO]: "${sanitizedTranscription}"`);
       }
 
-      // Step 2: Run Grammar and Verifier agents IN PARALLEL using CLEAN INPUT
+      // Step 2: Run Agents
       const [grammarResult, verifierResult] = await Promise.all([
         grammarAgent.process(cleanInput),
         verifierAgent.process(cleanInput),
@@ -115,60 +98,49 @@ export class AnalysisOrchestrator {
 
       agentsInvoked.push("grammar", "verifier");
 
-      // --- LOGS DEL PASO 1 (GRAMMAR) ---
-      // Nota: Accedemos a .data porque así lo definimos en analysisTypes.ts
+      // LOGS GRAMMAR
       console.log(`\n📘 [GRAMMAR AGENT]:`);
-      console.log(
-        `   - Tiene Errores: ${grammarResult.data.hasErrors ? "SÍ ❌" : "NO ✅"}`,
-      );
+      console.log(`   - Tiene Errores: ${grammarResult.data.hasErrors ? "SÍ ❌" : "NO ✅"}`);
       if (grammarResult.data.hasErrors) {
-        console.log(
-          `   - Corrección: "${grammarResult.data.correctedTranscription}"`,
-        );
-        const grammarFeedback =
-          grammarResult.data.feedback ||
-          grammarResult.data.feedbackInSpanish ||
-          "Sin feedback";
-        console.log(`   - Feedback: "${grammarFeedback}"`);
+        console.log(`   - Corrección: "${grammarResult.data.correctedTranscription}"`);
       } else {
         console.log(`   - Assessment: ${grammarResult.data.overallAssessment}`);
       }
 
-      // --- LOGS DEL PASO 1 (VERIFIER) ---
+      // LOGS VERIFIER
       console.log(`\n📙 [VERIFIER AGENT]:`);
-      console.log(
-        `   - ¿Es relevante?: ${verifierResult.data.isRelevant ? "SÍ ✅" : "NO ❌"} (Score: ${verifierResult.data.relevanceScore})`,
-      );
-      console.log(`   - Tipo: ${verifierResult.data.responseType}`);
+      console.log(`   - ¿Es relevante?: ${verifierResult.data.isRelevant ? "SÍ ✅" : "NO ❌"} (Score: ${verifierResult.data.relevanceScore})`);
+      console.log(`   - Razonamiento: "${(verifierResult.data.reasoning || "").substring(0, 100)}..."`);
 
-      const verifierReasoning =
-        verifierResult.data.reasoning || "No reasoning provided";
-      console.log(
-        `   - Razonamiento: "${verifierReasoning.substring(0, 100)}..."`,
-      );
-
-      // Step 3: Prepare input for Judge agent (Usamos también el input limpio)
+      // Step 3: Judge Input
       const judgeInput: JudgeInput = {
         ...cleanInput,
         grammarAnalysis: grammarResult.data,
         verifierAnalysis: verifierResult.data,
       };
 
-      // Step 4: Run Judge agent
+      // Step 4: Run Judge
       const judgeResult = await judgeAgent.process(judgeInput);
       agentsInvoked.push("judge");
 
-      // --- LOGS DEL PASO 3 (JUDGE) ---
+      // LOGS JUDGE
       console.log(`\n⚖️ [JUDGE AGENT] (Decisión Final):`);
-      console.log(
-        `   - Decisión: "${judgeResult.data.decision.toUpperCase()}" (Confianza: ${judgeResult.data.confidence})`,
-      );
-      console.log(
-        `   - ¿Avanzar?: ${judgeResult.data.shouldAdvance ? "SÍ ⏩" : "NO 🛑"}`,
-      );
+      console.log(`   - Decisión: "${judgeResult.data.decision.toUpperCase()}"`);
+      console.log(`   - ¿Avanzar?: ${judgeResult.data.shouldAdvance ? "SÍ ⏩" : "NO 🛑"}`);
       console.log(`   - Instrucción al Tutor:`);
       console.log(`     👉 "${judgeResult.data.tutorInstruction}"`);
       console.log(`--------------------------------------------------\n`);
+
+      // ✅ 2. EJECUTAMOS LA AUDITORÍA AQUÍ
+      // Esto es lo que faltaba. Se ejecuta en paralelo (sin await) para no frenar la respuesta.
+      auditInteraction(
+        input.sessionId,
+        input.lessonNumber,
+        sanitizedTranscription,
+        verifierResult.data,
+        grammarResult.data,
+        judgeResult.data
+      ).catch(err => console.error("⚠️ [AUDIT ERROR]", err));
 
       // Step 5: Build output
       const output: AnalysisOrchestratorOutput = {
@@ -181,13 +153,12 @@ export class AnalysisOrchestrator {
         agentsInvoked,
       };
 
-      // Include debug info if requested
       if (includeDebug) {
         output.debug = {
           grammarResult: grammarResult,
           verifierResult: verifierResult,
           judgeResult: judgeResult,
-          originalTranscription, // Guardamos el original por si quieres ver qué dijo realmente
+          originalTranscription,
         };
       }
 
